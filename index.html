@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LuvBabe</title>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111}iframe{display:block;width:100%;height:100%;border:0}</style>
+</head>
+<body>
+<iframe id="luv-app" title="LuvBabe"></iframe>
+<script>
+(function(){
+  var CLOUD='https://getpantry.cloud/apiv1/pantry/af4b9c-loveb-store-ratchaburi/basket/loveb_accounts_v1';
+  var frame=document.getElementById('luv-app');
+  var qs=window.location.search||'';
+  frame.src='index (1).html'+qs;
+
+  function randomString(len){
+    var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; var out='';
+    if(window.crypto&&window.crypto.getRandomValues){
+      var a=new Uint32Array(len); window.crypto.getRandomValues(a);
+      for(var i=0;i<len;i++) out+=chars[a[i]%chars.length];
+    }else for(var j=0;j<len;j++) out+=chars[Math.floor(Math.random()*chars.length)];
+    return out;
+  }
+  function makeId(list){
+    var id; do{id='FRIEND-'+randomString(6);}while(list.some(function(a){return a.username===id;})); return id;
+  }
+  function copy(text){
+    if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(text);
+    var t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(t);return Promise.resolve();
+  }
+  function loadAccounts(){
+    return fetch(CLOUD,{cache:'no-store'}).then(function(r){
+      if(!r.ok)throw new Error('โหลดบัญชีไม่ได้');
+      return r.json();
+    }).then(function(d){
+      if(!d||!Array.isArray(d.accounts))throw new Error('ข้อมูลบัญชีไม่ถูกต้อง');
+      return d.accounts;
+    });
+  }
+  function saveAccounts(list){
+    var body=JSON.stringify({accounts:list});
+    return fetch(CLOUD,{method:'PUT',headers:{'Content-Type':'application/json'},body:body}).then(function(r){
+      if(r.ok)return true;
+      return fetch(CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},body:body}).then(function(x){return x.ok;});
+    }).catch(function(){
+      return fetch(CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},body:body}).then(function(x){return x.ok;}).catch(function(){return false;});
+    });
+  }
+  function install(doc){
+    if(!doc)return;
+    var add=doc.getElementById('loveb-add-user-btn');
+    if(!add||doc.getElementById('loveb-create-friend-btn'))return;
+    var btn=doc.createElement('button');
+    btn.id='loveb-create-friend-btn';btn.type='button';
+    btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';
+    btn.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #ff4d8d;background:transparent;color:#ff7aaa;font-weight:600;font-size:13px;cursor:pointer;';
+    var result=doc.createElement('div');result.id='loveb-friend-result';result.style.cssText='display:none;margin-top:10px;border:1px solid #3a2630;border-radius:10px;padding:10px;background:#21171d;font-size:12px;color:#f5dce6;';
+    add.parentNode.appendChild(btn);add.parentNode.appendChild(result);
+    btn.onclick=function(){
+      btn.disabled=true;btn.textContent='กำลังสร้าง ID...';
+      loadAccounts().then(function(list){
+        var id=makeId(list), pass=randomString(10), tabs=[];
+        var checks=doc.querySelectorAll('.loveb-new-tab-chk:checked');
+        for(var i=0;i<checks.length;i++)tabs.push(checks[i].value);
+        list.push({username:id,password:pass,role:'partner',allowedTabs:tabs});
+        return saveAccounts(list).then(function(ok){
+          if(!ok)throw new Error('บันทึกบัญชีขึ้นคลาวด์ไม่สำเร็จ');
+          var link=window.location.origin+window.location.pathname+'?id='+encodeURIComponent(id);
+          result.style.display='block';
+          result.innerHTML='<div style="font-weight:700;color:#ff8bb5;margin-bottom:6px">✅ สร้าง ID ให้เพื่อนแล้ว</div><div>🆔 ID: <b>'+id+'</b></div><div>🔑 รหัสผ่าน: <b>'+pass+'</b></div><div style="word-break:break-all;margin-top:4px">🔗 ลิงก์: <span>'+link+'</span></div><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button id="copy-friend" style="padding:7px 9px;border:0;border-radius:7px;background:#ff4d8d;color:#fff">คัดลอก ID/รหัส</button><button id="copy-link" style="padding:7px 9px;border:1px solid #ff4d8d;border-radius:7px;background:transparent;color:#ff9abe">คัดลอกลิงก์</button></div>';
+          doc.getElementById('copy-friend').onclick=function(){copy(id+'\n'+pass).then(function(){alert('คัดลอก ID และรหัสผ่านแล้ว')})};
+          doc.getElementById('copy-link').onclick=function(){copy(link).then(function(){alert('คัดลอกลิงก์แล้ว')})};
+          alert('✅ สร้าง ID ให้เพื่อนสำเร็จ\nID: '+id+'\nรหัสผ่าน: '+pass);
+        });
+      }).catch(function(e){result.style.display='block';result.textContent='❌ '+e.message;}).finally(function(){btn.disabled=false;btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';});
+    };
+    var friendId=new URLSearchParams(window.location.search).get('id');
+    if(friendId){var input=doc.getElementById('loveb-auth-user');if(input)input.value=friendId;}
+  }
+  frame.addEventListener('load',function(){
+    var doc=frame.contentDocument||frame.contentWindow.document;
+    install(doc);
+    var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true});
+  });
+})();
+</script>
+</body>
+</html>
