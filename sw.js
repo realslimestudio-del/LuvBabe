@@ -4,7 +4,7 @@ const MANTLE_STAFFS='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d
 const MANTLE_DATA='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/appdata';
 const DATA_BASKET='/basket/loveb_pink_complete_final';
 const ACCOUNTS_BASKET='/basket/loveb_accounts_v1';
-const TX_URL=new URL('transactions.json',self.registration.scope).href;
+const TX_URL=new URL('transactions.json?v=20260908-25',self.registration.scope).href;
 self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));
 self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
 let txCache=null;
