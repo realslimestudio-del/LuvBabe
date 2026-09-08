@@ -1,0 +1,121 @@
+name: Install friend ID feature
+
+on:
+  push:
+    paths:
+      - '.github/workflows/install-friend-id.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch site
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('index (1).html')
+          s = p.read_text(encoding='utf-8')
+
+          old_button = '''      <button id="loveb-add-user-btn" style="width:100%;padding:10px;border-radius:10px;border:none;background:#ff4d8d;color:#fff;font-weight:600;font-size:13px;">สร้างบัญชี</button>'''
+          new_button = '''      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+       <button id="loveb-add-user-btn" style="flex:1;min-width:180px;padding:10px;border-radius:10px;border:none;background:#ff4d8d;color:#fff;font-weight:600;font-size:13px;">สร้างบัญชี</button>
+       <button id="loveb-create-friend-btn" type="button" style="flex:1;min-width:180px;padding:10px;border-radius:10px;border:1px solid #ff4d8d;background:transparent;color:#ff7aaa;font-weight:600;font-size:13px;">💗 สร้าง ID ให้เพื่อนอัตโนมัติ</button>
+     </div>
+     <div id="loveb-friend-result" style="display:none;margin-top:10px;border:1px solid #3a2630;border-radius:10px;padding:10px;background:#21171d;font-size:12px;color:#f5dce6;"></div>'''
+
+          if 'loveb-create-friend-btn' not in s:
+              if old_button not in s:
+                  raise SystemExit('Admin create-account button marker not found')
+              s = s.replace(old_button, new_button, 1)
+
+              marker = "  document.getElementById('loveb-add-user-btn').onclick = function(){"
+              if marker not in s:
+                  raise SystemExit('Admin account handler marker not found')
+
+              feature = r'''  function lovebRandomString(len){
+    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    var out = '';
+    if(window.crypto && window.crypto.getRandomValues){
+      var arr = new Uint32Array(len); window.crypto.getRandomValues(arr);
+      for(var i=0;i<len;i++) out += chars[arr[i] % chars.length];
+    }else{
+      for(var j=0;j<len;j++) out += chars[Math.floor(Math.random()*chars.length)];
+    }
+    return out;
+  }
+  function lovebMakeFriendCredentials(existing){
+    var id;
+    do { id = 'FRIEND-' + lovebRandomString(6).toUpperCase(); }
+    while(existing.some(function(a){ return a.username === id; }));
+    return {username:id, password:lovebRandomString(10)};
+  }
+  function lovebCopyText(text){
+    if(navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+    var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); }catch(e){} document.body.removeChild(ta);
+    return Promise.resolve();
+  }
+  document.getElementById('loveb-create-friend-btn').onclick = function(){
+    loadAccounts().then(function(list){
+      accounts = list;
+      if(list && list._cloudUnreachable){
+        alert('❌ เชื่อมต่อคลาวด์ไม่ได้ จึงยังสร้าง ID ให้เพื่อนไม่ได้');
+        return;
+      }
+      var cred = lovebMakeFriendCredentials(accounts);
+      var checkedTabs = [];
+      var chks = document.querySelectorAll('.loveb-new-tab-chk:checked');
+      for(var i=0;i<chks.length;i++) checkedTabs.push(chks[i].value);
+      accounts.push({username:cred.username,password:cred.password,role:'partner',allowedTabs:checkedTabs});
+      saveAccounts(accounts).then(function(ok){
+        var result = document.getElementById('loveb-friend-result');
+        if(!ok){
+          accounts = accounts.filter(function(a){ return a.username !== cred.username; });
+          saveAccountsLocal(accounts);
+          result.style.display='block';
+          result.textContent='❌ สร้างไม่สำเร็จ เพราะบันทึกขึ้นคลาวด์ไม่ได้';
+          return;
+        }
+        var link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(cred.username);
+        result.style.display='block';
+        result.innerHTML = '<div style="font-weight:700;color:#ff8bb5;margin-bottom:6px;">✅ สร้าง ID ให้เพื่อนแล้ว</div>' +
+          '<div>🆔 ID: <b>'+cred.username+'</b></div>' +
+          '<div>🔑 รหัสผ่าน: <b>'+cred.password+'</b></div>' +
+          '<div style="word-break:break-all;margin-top:4px;">🔗 ลิงก์: <span>'+link+'</span></div>' +
+          '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">' +
+          '<button id="loveb-copy-friend-id" style="padding:7px 9px;border:0;border-radius:7px;background:#ff4d8d;color:#fff;">คัดลอก ID/รหัส</button>' +
+          '<button id="loveb-copy-friend-link" style="padding:7px 9px;border:1px solid #ff4d8d;border-radius:7px;background:transparent;color:#ff9abe;">คัดลอกลิงก์</button></div>';
+        document.getElementById('loveb-copy-friend-id').onclick=function(){ lovebCopyText(cred.username+'\n'+cred.password).then(function(){alert('คัดลอก ID และรหัสผ่านแล้ว');}); };
+        document.getElementById('loveb-copy-friend-link').onclick=function(){ lovebCopyText(link).then(function(){alert('คัดลอกลิงก์แล้ว');}); };
+        alert('✅ สร้าง ID ให้เพื่อนสำเร็จ\nID: '+cred.username+'\nรหัสผ่าน: '+cred.password);
+      });
+    });
+  };
+
+'''
+              s = s.replace(marker, feature + marker, 1)
+
+              login_marker = "  var logoutBtn = document.getElementById('loveb-logout-btn');"
+              login_insert = "  var logoutBtn = document.getElementById('loveb-logout-btn');\n  try{ var friendIdParam = new URLSearchParams(window.location.search).get('id'); if(friendIdParam) userInput.value = friendIdParam; }catch(e){}"
+              if login_marker in s and 'friendIdParam' not in s:
+                  s = s.replace(login_marker, login_insert, 1)
+
+              p.write_text(s, encoding='utf-8')
+          else:
+              print('Feature already installed')
+      - name: Commit patched site and remove installer
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/install-friend-id.yml
+          git add "index (1).html"
+          git diff --cached --quiet && exit 0
+          git commit -m "Add automatic friend ID creation"
+          git push
