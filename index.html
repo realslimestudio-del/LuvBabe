@@ -23,7 +23,7 @@
   function install(doc){installFriendButton(doc);}
   function boot(){frame.src='index%20(1).html'+(window.location.search||'');frame.addEventListener('load',function(){try{var doc=frame.contentDocument||frame.contentWindow.document;install(doc);if(doc.documentElement){var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true});}}catch(e){}});}
   ensureRecovery().catch(function(){}).then(boot);
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js?v=20260908-21',{scope:'./'}).then(function(reg){return reg.update()}).catch(function(){});}
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js?v=20260908-22',{scope:'./'}).then(function(reg){return reg.update()}).catch(function(){});}
 })();
 </script>
 </body>
