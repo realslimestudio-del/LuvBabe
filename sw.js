@@ -59,6 +59,64 @@ self.addEventListener('fetch', event => {
         let fixed=text.replace('staffs:S.staffs?.length?S.staffs:P.staffs','staffs:Array.isArray(S.staffs)?S.staffs:P.staffs');
         fixed=fixed.replace('staffs:S.staffs?.map((D)=>{','staffs:Array.isArray(S.staffs)?S.staffs.map((D)=>{');
         fixed=fixed.replace('})||L.staffs','}):L.staffs');
+        const permissionScript=`
+<script>
+(function(){
+  var ACCOUNT_URL='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/accounts';
+  var doneFor='';
+  var aliases={
+    dashboard:['dashboard','หน้าหลัก','แดชบอร์ด','ภาพรวม','home'],
+    sales:['sales','ยอดขาย','ขาย','รายการขาย'],
+    customers:['customers','ลูกค้า','สมาชิก','ข้อมูลลูกค้า'],
+    staffs:['staffs','staff','พนักงาน','จัดการพนักงาน'],
+    reports:['reports','รายงาน','สรุปผล'],
+    settings:['settings','ตั้งค่า','การตั้งค่า']
+  };
+  function textOf(el){return ((el.innerText||el.textContent||'')+' '+(el.getAttribute('aria-label')||'')+' '+(el.getAttribute('title')||'')).trim().toLowerCase();}
+  function findUser(){
+    var q=['#loveb-auth-user','input[name="username"]','input[name="user"]','input[autocomplete="username"]','input[type="text"]'];
+    for(var i=0;i<q.length;i++){var e=document.querySelector(q[i]);if(e&&e.value)return e.value.trim();}
+    try{var p=new URLSearchParams(location.search).get('id');if(p)return p;}catch(e){}
+    return '';
+  }
+  function getAccounts(){return fetch(ACCOUNT_URL,{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(d){return Array.isArray(d)?d:(d&&Array.isArray(d.accounts)?d.accounts:[]);});}
+  function isAllowed(name,key){var a=aliases[key]||[];for(var i=0;i<a.length;i++)if(name.indexOf(a[i])>=0)return true;return false;}
+  function apply(account){
+    if(!account||account.role==='admin')return;
+    var allowed=Array.isArray(account.allowedTabs)?account.allowedTabs.map(String):[];
+    var nodes=document.querySelectorAll('button,a,[role="button"]');
+    for(var i=0;i<nodes.length;i++){
+      var el=nodes[i],t=textOf(el); if(!t)continue;
+      for(var key in aliases){
+        if(isAllowed(t,key)){
+          var ok=allowed.indexOf(key)>=0;
+          if(ok)el.style.removeProperty('display'); else {el.style.display='none';el.setAttribute('data-luvbabe-denied','1');}
+          break;
+        }
+      }
+    }
+    document.documentElement.setAttribute('data-luvbabe-role',account.role||'partner');
+    document.documentElement.setAttribute('data-luvbabe-allowed-tabs',allowed.join(','));
+  }
+  function run(){
+    var user=findUser(); if(!user||user===doneFor)return;
+    getAccounts().then(function(list){
+      var a=null;for(var i=0;i<list.length;i++)if(list[i]&&String(list[i].username)===String(user)){a=list[i];break;}
+      if(a){doneFor=user;apply(a);}
+    }).catch(function(){});
+  }
+  var obs=new MutationObserver(function(){
+    var role=document.documentElement.getAttribute('data-luvbabe-role');
+    if(role==='partner'){
+      var user=findUser();getAccounts().then(function(list){for(var i=0;i<list.length;i++)if(list[i]&&String(list[i].username)===String(user)){apply(list[i]);break;}}).catch(function(){});
+    }else run();
+  });
+  try{obs.observe(document.documentElement,{subtree:true,childList:true});}catch(e){}
+  setInterval(run,1200);run();
+})();
+</script>`;
+        fixed=fixed.replace('</body>',permissionScript+'</body>');
+        if(fixed===text)fixed=text.replace('</head>',permissionScript+'</head>');
         return new Response(fixed,{status:original.status,statusText:original.statusText,headers:original.headers});
       }catch(e){return original}
     })()); return;
@@ -94,7 +152,6 @@ self.addEventListener('fetch', event => {
           if(payload.staffs.length>0&&Date.now()<clearLockUntil)return fetch(req);
           await saveStaffs(payload.staffs);
         }
-        // IMPORTANT: never rewrite transaction payloads. The original request is passed through unchanged.
         return fetch(req);
       }
       return fetch(req);
