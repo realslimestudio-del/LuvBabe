@@ -16,81 +16,22 @@
   function buttons(doc){return Array.prototype.slice.call(doc.querySelectorAll('button'))}
   function findButton(doc,needle){needle=String(needle).toLowerCase();return buttons(doc).find(function(b){return text(b).toLowerCase().indexOf(needle)>=0})}
   function findEmployeeInput(doc){var xs=Array.prototype.slice.call(doc.querySelectorAll('input'));return xs.find(function(x){var p=(x.placeholder||'').toLowerCase();return p.indexOf('ชื่อพนักงาน')>=0||p.indexOf('พนักงานใหม่')>=0})}
-  function findEmployeeCards(doc){
-    var out=[];
-    buttons(doc).forEach(function(btn){var t=text(btn).toLowerCase();if(t.indexOf('clock in')<0&&t.indexOf('clock out')<0&&t.indexOf('เข้าเวร')<0&&t.indexOf('ลงเวลา')<0)return;var el=btn;for(var n=0;n<7&&el;n++,el=el.parentElement){var inputs=el.querySelectorAll?el.querySelectorAll('input'):[];if(inputs.length>=1){out.push(el);break}}});
-    return out.filter(function(x,i,a){return a.indexOf(x)===i});
-  }
-  function cardName(card){
-    var all=card.querySelectorAll?card.querySelectorAll('*'):[];
-    for(var i=0;i<all.length;i++){var t=text(all[i]);if(!t||t.length>50)continue;if(/^\S{1,30}\s*[•·]?$/.test(t)&&!/^\d/.test(t)&&t.indexOf('Clock')<0&&t.indexOf('คอมมิชชั่น')<0&&t.indexOf('กำไร')<0&&t.indexOf('ธุรกรรม')<0&&t.indexOf('ปิดขาย')<0)return t.replace(/[•·]$/,'').trim()}
-    return '';
-  }
-  function captureEmployees(doc){
-    var cards=findEmployeeCards(doc), names=[];
-    cards.forEach(function(card){var n=cardName(card);if(n&&names.indexOf(n)<0)names.push(n)});
-    return names;
-  }
-  function setInputValue(input,value,doc){
-    var setter=Object.getOwnPropertyDescriptor((input.ownerDocument.defaultView.HTMLInputElement||HTMLInputElement).prototype,'value');
-    if(setter&&setter.set)setter.set.call(input,value);else input.value=value;
-    input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));
-  }
-  function employeeSync(doc){
-    if(!doc||doc.getElementById('luv-employee-sync'))return;
-    var marker=doc.createElement('meta');marker.id='luv-employee-sync';doc.head.appendChild(marker);
-    var syncing=false,saveTimer=null;
+  function findEmployeeCards(doc){var out=[];buttons(doc).forEach(function(btn){var t=text(btn).toLowerCase();if(t.indexOf('clock in')<0&&t.indexOf('clock out')<0&&t.indexOf('เข้าเวร')<0&&t.indexOf('ลงเวลา')<0)return;var el=btn;for(var n=0;n<7&&el;n++,el=el.parentElement){var inputs=el.querySelectorAll?el.querySelectorAll('input'):[];if(inputs.length>=1){out.push(el);break}}});return out.filter(function(x,i,a){return a.indexOf(x)===i})}
+  function cardName(card){var all=card.querySelectorAll?card.querySelectorAll('*'):[];for(var i=0;i<all.length;i++){var t=text(all[i]);if(!t||t.length>50)continue;if(/^\S{1,30}\s*[•·]?$/.test(t)&&!/^\d/.test(t)&&t.indexOf('Clock')<0&&t.indexOf('คอมมิชชั่น')<0&&t.indexOf('กำไร')<0&&t.indexOf('ธุรกรรม')<0&&t.indexOf('ปิดขาย')<0)return t.replace(/[•·]$/,'').trim()}return ''}
+  function captureEmployees(doc){var cards=findEmployeeCards(doc),names=[];cards.forEach(function(card){var n=cardName(card);if(n&&names.indexOf(n)<0)names.push(n)});return names}
+  function setInputValue(input,value){try{var proto=input.ownerDocument.defaultView.HTMLInputElement;var setter=Object.getOwnPropertyDescriptor(proto.prototype,'value');if(setter&&setter.set)setter.set.call(input,value);else input.value=value}catch(e){input.value=value}input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}))}
+  function employeeSync(doc){if(!doc||doc.getElementById('luv-employee-sync'))return;var marker=doc.createElement('meta');marker.id='luv-employee-sync';doc.head.appendChild(marker);var syncing=false,saveTimer=null;
     function current(){return captureEmployees(doc)}
-    function saveFromPage(){
-      if(syncing)return;
-      clearTimeout(saveTimer);saveTimer=setTimeout(function(){
-        var names=current();
-        loadAccounts().then(function(old){
-          var keep={};old.forEach(function(a){if(a&&a.username)keep[a.username]=a});
-          var list=names.map(function(name){return keep[name]||{username:name,password:randomString(10),role:'partner',allowedTabs:[]}});
-          return saveAccounts(list);
-        }).catch(function(){/* หน้าใช้งานต่อได้แม้คลาวด์ชั่วคราวไม่พร้อม */});
-      },700);
-    }
-    function syncFromCloud(){
-      loadAccounts().then(function(accounts){
-        if(!accounts.length)return;
-        var input=findEmployeeInput(doc),add=findButton(doc,'เพิ่ม'),clear=findButton(doc,'ล้างพนักงานทั้งหมด');
-        if(!input||!add)return;
-        var wanted=accounts.map(function(a){return a&&a.username}).filter(Boolean),now=current();
-        if(wanted.length===now.length&&wanted.every(function(n,i){return n===now[i]}))return;
-        syncing=true;
-        var done=Promise.resolve();
-        if(clear&&now.length)done=done.then(function(){clear.click();return new Promise(function(r){setTimeout(r,250)})});
-        wanted.forEach(function(name){done=done.then(function(){setInputValue(input,name,doc);add.click();return new Promise(function(r){setTimeout(r,220)})})});
-        done.then(function(){syncing=false}).catch(function(){syncing=false});
-      }).catch(function(){});
-    }
-    doc.addEventListener('click',function(e){
-      var b=e.target&&e.target.closest?e.target.closest('button'):null;
-      if(!b)return;
-      var t=text(b).toLowerCase();
-      if(t.indexOf('เพิ่ม')>=0||t.indexOf('ล้างพนักงานทั้งหมด')>=0||t==='×'||t==='✕')saveFromPage();
-    },true);
-    var observer=new MutationObserver(function(){
-      if(!syncing){var input=findEmployeeInput(doc);if(input&&input.dataset.luvSyncBound!=='1'){input.dataset.luvSyncBound='1';input.addEventListener('change',saveFromPage);}}
-    });
-    observer.observe(doc.body,{subtree:true,childList:true});
-    setTimeout(syncFromCloud,900);
+    function saveFromPage(){if(syncing)return;clearTimeout(saveTimer);saveTimer=setTimeout(function(){var names=current();loadAccounts().then(function(old){var keep={};old.forEach(function(a){if(a&&a.username)keep[a.username]=a});var list=names.map(function(name){return keep[name]||{username:name,password:randomString(10),role:'partner',allowedTabs:[]}});return saveAccounts(list)}).catch(function(){})},700)}
+    function syncFromCloud(){loadAccounts().then(function(accounts){if(!accounts.length)return;var input=findEmployeeInput(doc),add=findButton(doc,'เพิ่ม'),clear=findButton(doc,'ล้างพนักงานทั้งหมด');if(!input||!add)return;var wanted=accounts.map(function(a){return a&&a.username}).filter(Boolean),now=current();if(wanted.length===now.length&&wanted.every(function(n,i){return n===now[i]}))return;syncing=true;var done=Promise.resolve();if(clear&&now.length)done=done.then(function(){clear.click();return new Promise(function(r){setTimeout(r,250)})});wanted.forEach(function(name){done=done.then(function(){setInputValue(input,name);add.click();return new Promise(function(r){setTimeout(r,220)})})});done.then(function(){syncing=false}).catch(function(){syncing=false})}).catch(function(){})}
+    doc.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button'):null;if(!b)return;var t=text(b).toLowerCase();if(t.indexOf('เพิ่ม')>=0||t.indexOf('ล้างพนักงานทั้งหมด')>=0||t==='×'||t==='✕')saveFromPage()},true);
+    var observer=new MutationObserver(function(){if(!syncing){var input=findEmployeeInput(doc);if(input&&input.dataset.luvSyncBound!=='1'){input.dataset.luvSyncBound='1';input.addEventListener('change',saveFromPage)}}});observer.observe(doc.body,{subtree:true,childList:true});setTimeout(syncFromCloud,900)
   }
-  function installFriendButton(doc){
-    if(!doc)return;
-    var add=doc.getElementById('loveb-add-user-btn');
-    if(!add||doc.getElementById('loveb-create-friend-btn'))return;
-    var btn=doc.createElement('button');btn.id='loveb-create-friend-btn';btn.type='button';btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';btn.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #ff4d8d;background:transparent;color:#ff7aaa;font-weight:600;font-size:13px;cursor:pointer;';
-    var result=doc.createElement('div');result.id='loveb-friend-result';result.style.cssText='display:none;margin-top:10px;border:1px solid #3a2630;border-radius:10px;padding:10px;background:#21171d;font-size:12px;color:#f5dce6;';
-    add.parentNode.appendChild(btn);add.parentNode.appendChild(result);
-    btn.onclick=function(){btn.disabled=true;btn.textContent='กำลังสร้าง ID...';loadAccounts().then(function(list){var id=makeId(list),pass=randomString(10),tabs=[],checks=doc.querySelectorAll('.loveb-new-tab-chk:checked');for(var i=0;i<checks.length;i++)tabs.push(checks[i].value);list.push({username:id,password:pass,role:'partner',allowedTabs:tabs});return saveAccounts(list).then(function(){var link=window.location.origin+window.location.pathname+'?id='+encodeURIComponent(id);result.style.display='block';result.innerHTML='<div style="font-weight:700;color:#ff8bb5;margin-bottom:6px">✅ สร้าง ID ให้เพื่อนแล้ว</div><div>🆔 ID: <b>'+id+'</b></div><div>🔑 รหัสผ่าน: <b>'+pass+'</b></div><div style="word-break:break-all;margin-top:4px">🔗 ลิงก์: <span>'+link+'</span></div><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button id="copy-friend" style="padding:7px 9px;border:0;border-radius:7px;background:#ff4d8d;color:#fff">คัดลอก ID/รหัส</button><button id="copy-link" style="padding:7px 9px;border:1px solid #ff4d8d;background:transparent;color:#ff9abe">คัดลอกลิงก์</button></div>';doc.getElementById('copy-friend').onclick=function(){copy(id+'\n'+pass).then(function(){alert('คัดลอก ID และรหัสผ่านแล้ว')})};doc.getElementById('copy-link').onclick=function(){copy(link).then(function(){alert('คัดลอกลิงก์แล้ว')})};alert('✅ สร้าง ID ให้เพื่อนสำเร็จ\nID: '+id+'\nรหัสผ่าน: '+pass)})}).catch(function(e){result.style.display='block';result.textContent='❌ '+e.message}).finally(function(){btn.disabled=false;btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ'})};
-    var friendId=new URLSearchParams(window.location.search).get('id');if(friendId){var input=doc.getElementById('loveb-auth-user');if(input)input.value=friendId}
-  }
+  function installFriendButton(doc){if(!doc)return;var add=doc.getElementById('loveb-add-user-btn');if(!add||doc.getElementById('loveb-create-friend-btn'))return;var btn=doc.createElement('button');btn.id='loveb-create-friend-btn';btn.type='button';btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';btn.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #ff4d8d;background:transparent;color:#ff7aaa;font-weight:600;font-size:13px;cursor:pointer;';var result=doc.createElement('div');result.id='loveb-friend-result';result.style.cssText='display:none;margin-top:10px;border:1px solid #3a2630;border-radius:10px;padding:10px;background:#21171d;font-size:12px;color:#f5dce6;';add.parentNode.appendChild(btn);add.parentNode.appendChild(result);btn.onclick=function(){btn.disabled=true;btn.textContent='กำลังสร้าง ID...';loadAccounts().then(function(list){var id=makeId(list),pass=randomString(10),tabs=[],checks=doc.querySelectorAll('.loveb-new-tab-chk:checked');for(var i=0;i<checks.length;i++)tabs.push(checks[i].value);list.push({username:id,password:pass,role:'partner',allowedTabs:tabs});return saveAccounts(list).then(function(){var link=window.location.origin+window.location.pathname+'?id='+encodeURIComponent(id);result.style.display='block';result.innerHTML='<div style="font-weight:700;color:#ff8bb5;margin-bottom:6px">✅ สร้าง ID ให้เพื่อนแล้ว</div><div>🆔 ID: <b>'+id+'</b></div><div>🔑 รหัสผ่าน: <b>'+pass+'</b></div><div style="word-break:break-all;margin-top:4px">🔗 ลิงก์: <span>'+link+'</span></div><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button id="copy-friend" style="padding:7px 9px;border:0;border-radius:7px;background:#ff4d8d;color:#fff">คัดลอก ID/รหัส</button><button id="copy-link" style="padding:7px 9px;border:1px solid #ff4d8d;background:transparent;color:#ff9abe">คัดลอกลิงก์</button></div>';doc.getElementById('copy-friend').onclick=function(){copy(id+'\n'+pass).then(function(){alert('คัดลอก ID และรหัสผ่านแล้ว')})};doc.getElementById('copy-link').onclick=function(){copy(link).then(function(){alert('คัดลอกลิงก์แล้ว')})};alert('✅ สร้าง ID ให้เพื่อนสำเร็จ\nID: '+id+'\nรหัสผ่าน: '+pass)})}).catch(function(e){result.style.display='block';result.textContent='❌ '+e.message}).finally(function(){btn.disabled=false;btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ'})};var friendId=new URLSearchParams(window.location.search).get('id');if(friendId){var input=doc.getElementById('loveb-auth-user');if(input)input.value=friendId}}
   function install(doc){installFriendButton(doc);employeeSync(doc)}
-  function boot(){frame.src='index (1).html'+(window.location.search||'');frame.addEventListener('load',function(){var doc=frame.contentDocument||frame.contentWindow.document;install(doc);if(doc.documentElement){var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true})}})}
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js?v=20260908-16',{scope:'./'}).then(function(reg){return reg.update().then(function(){return navigator.serviceWorker.ready})}).then(boot).catch(boot)}else boot()
+  function boot(){frame.src='index%20(1).html'+(window.location.search||'');frame.addEventListener('load',function(){try{var doc=frame.contentDocument||frame.contentWindow.document;install(doc);if(doc.documentElement){var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true})}}catch(e){}})}
+  boot();
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js?v=20260908-17',{scope:'./'}).then(function(reg){return reg.update()}).catch(function(){})}
 })();
 </script>
 </body>
