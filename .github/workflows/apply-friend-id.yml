@@ -1,4 +1,3 @@
-# one-time patch
 name: Apply friend ID feature
 
 on:
@@ -13,32 +12,38 @@ jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Patch HTML
-        shell: python
+        shell: bash
         run: |
+          python3 <<'PY'
           from pathlib import Path
           p = Path('index (1).html')
           s = p.read_text(encoding='utf-8')
+
           if 'loveb-create-friend-btn' in s:
               print('Feature already present')
               raise SystemExit(0)
-          old = '''      <button id="loveb-add-user-btn" style="width:100%;padding:10px;border-radius:10px;border:none;background:#ff4d8d;color:#fff;font-weight:600;font-size:13px;">สร้างบัญชี</button>'''
-          new = '''      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+
+          old_button = '      <button id="loveb-add-user-btn" style="width:100%;padding:10px;border-radius:10px;border:none;background:#ff4d8d;color:#fff;font-weight:600;font-size:13px;">สร้างบัญชี</button>'
+          new_button = '''      <div style="display:flex;gap:8px;flex-wrap:wrap;">
        <button id="loveb-add-user-btn" style="flex:1;min-width:180px;padding:10px;border-radius:10px;border:none;background:#ff4d8d;color:#fff;font-weight:600;font-size:13px;">สร้างบัญชี</button>
        <button id="loveb-create-friend-btn" type="button" style="flex:1;min-width:180px;padding:10px;border-radius:10px;border:1px solid #ff4d8d;background:transparent;color:#ff7aaa;font-weight:600;font-size:13px;">💗 สร้าง ID ให้เพื่อนอัตโนมัติ</button>
      </div>
      <div id="loveb-friend-result" style="display:none;margin-top:10px;border:1px solid #3a2630;border-radius:10px;padding:10px;background:#21171d;font-size:12px;color:#f5dce6;"></div>'''
-          if old not in s:
+          if old_button not in s:
               raise SystemExit('Target button not found')
-          s = s.replace(old, new, 1)
-          marker = '''    if(e.target === adminModal) adminModal.style.display = 'none';
-  });'''
-          js = r'''
+          s = s.replace(old_button, new_button, 1)
 
-  function lovebRandomString(len){
+          marker = "  document.getElementById('loveb-add-user-btn').onclick = function(){"
+          if marker not in s:
+              raise SystemExit('Account handler marker not found')
+
+          feature = r'''  function lovebRandomString(len){
     var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
     var out = '';
     if(window.crypto && window.crypto.getRandomValues){
@@ -64,7 +69,7 @@ jobs:
   document.getElementById('loveb-create-friend-btn').onclick = function(){
     loadAccounts().then(function(list){
       accounts = list;
-      if(list._cloudUnreachable){
+      if(list && list._cloudUnreachable){
         alert('❌ เชื่อมต่อคลาวด์ไม่ได้ จึงยังสร้าง ID ให้เพื่อนไม่ได้');
         return;
       }
@@ -72,8 +77,7 @@ jobs:
       var checkedTabs = [];
       var chks = document.querySelectorAll('.loveb-new-tab-chk:checked');
       for(var i=0;i<chks.length;i++) checkedTabs.push(chks[i].value);
-      var newAccount = {username:cred.username,password:cred.password,role:'partner',allowedTabs:checkedTabs};
-      accounts.push(newAccount);
+      accounts.push({username:cred.username,password:cred.password,role:'partner',allowedTabs:checkedTabs});
       saveAccounts(accounts).then(function(ok){
         var result = document.getElementById('loveb-friend-result');
         if(!ok){
@@ -83,33 +87,46 @@ jobs:
           result.textContent='❌ สร้างไม่สำเร็จ เพราะบันทึกขึ้นคลาวด์ไม่ได้';
           return;
         }
+        var link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(cred.username);
         result.style.display='block';
         result.innerHTML = '<div style="font-weight:700;color:#ff8bb5;margin-bottom:6px;">✅ สร้าง ID ให้เพื่อนแล้ว</div>' +
           '<div>🆔 ID: <b>'+cred.username+'</b></div>' +
           '<div>🔑 รหัสผ่าน: <b>'+cred.password+'</b></div>' +
+          '<div style="word-break:break-all;margin-top:4px;">🔗 ลิงก์: <span>'+link+'</span></div>' +
           '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">' +
-          '<button id="loveb-copy-friend-id" style="padding:7px 9px;border:0;border-radius:7px;background:#ff4d8d;color:#fff;">คัดลอก ID/รหัส</button></div>';
+          '<button id="loveb-copy-friend-id" style="padding:7px 9px;border:0;border-radius:7px;background:#ff4d8d;color:#fff;">คัดลอก ID/รหัส</button>' +
+          '<button id="loveb-copy-friend-link" style="padding:7px 9px;border:1px solid #ff4d8d;border-radius:7px;background:transparent;color:#ff9abe;">คัดลอกลิงก์</button></div>';
         document.getElementById('loveb-copy-friend-id').onclick=function(){ lovebCopyText(cred.username+'\n'+cred.password).then(function(){alert('คัดลอก ID และรหัสผ่านแล้ว');}); };
+        document.getElementById('loveb-copy-friend-link').onclick=function(){ lovebCopyText(link).then(function(){alert('คัดลอกลิงก์แล้ว');}); };
         alert('✅ สร้าง ID ให้เพื่อนสำเร็จ\nID: '+cred.username+'\nรหัสผ่าน: '+cred.password);
       });
     });
   };
+
 '''
-          if marker not in s:
-              raise SystemExit('JS insertion marker not found')
-          s = s.replace(marker, marker + js, 1)
+          s = s.replace(marker, feature + marker, 1)
+
+          login_marker = "  var logoutBtn = document.getElementById('loveb-logout-btn');"
+          if login_marker in s and 'friendIdParam' not in s:
+              s = s.replace(login_marker, login_marker + "\n  try{ var friendIdParam = new URLSearchParams(window.location.search).get('id'); if(friendIdParam) userInput.value = friendIdParam; }catch(e){}", 1)
+
           p.write_text(s, encoding='utf-8')
           print('Patched', p)
-      - name: Commit changes
+          PY
+
+      - name: Commit and clean up
+        shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add 'index (1).html'
-          git diff --cached --quiet && exit 0
+          if git diff --cached --quiet; then
+            echo 'No site changes needed'
+            exit 0
+          fi
           git commit -m 'Add automatic friend ID creation'
           git push
-      - name: Remove patch workflow
-        run: |
-          git rm .github/workflows/apply-friend-id.yml
-          git commit -m 'Remove one-time patch workflow'
+
+          git rm '.github/workflows/apply-friend-id.yml'
+          git commit -m 'Remove friend ID patch workflow'
           git push
