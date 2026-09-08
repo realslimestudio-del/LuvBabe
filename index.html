@@ -11,6 +11,7 @@
 <script>
 (function(){
   var CLOUD='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/accounts';
+  var STAFF_CLOUD='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/staffs';
   var frame=document.getElementById('luv-app');
   function randomString(len){
     var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',out='';
@@ -22,14 +23,25 @@
   function copy(text){if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(text);var t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(t);return Promise.resolve();}
   function loadAccounts(){return fetch(CLOUD,{cache:'no-store'}).then(function(r){if(r.status===404)return [];if(!r.ok)throw new Error('โหลดบัญชีไม่ได้');return r.json()}).then(function(d){return Array.isArray(d)?d:(d&&Array.isArray(d.accounts)?d.accounts:[])})}
   function saveAccounts(list){return fetch(CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accounts:list})}).then(function(r){return r.ok})}
+  function saveAllStaffsEmpty(){return fetch(STAFF_CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({staffs:[]})}).then(function(r){if(!r.ok)throw new Error('บันทึกการล้างพนักงานไม่สำเร็จ');return true;})}
   function install(doc){
     if(!doc)return;
     var add=doc.getElementById('loveb-add-user-btn');
     if(!add||doc.getElementById('loveb-create-friend-btn'))return;
     var btn=doc.createElement('button');btn.id='loveb-create-friend-btn';btn.type='button';btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';
     btn.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #ff4d8d;background:transparent;color:#ff7aaa;font-weight:600;font-size:13px;cursor:pointer;';
+    var clearBtn=doc.createElement('button');clearBtn.id='loveb-clear-staff-save-btn';clearBtn.type='button';clearBtn.textContent='🗑️ ล้างพนักงานทั้งหมด + บันทึก';
+    clearBtn.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #ff6b6b;background:transparent;color:#ff8585;font-weight:700;font-size:13px;cursor:pointer;';
     var result=doc.createElement('div');result.id='loveb-friend-result';result.style.cssText='display:none;margin-top:10px;border:1px solid #3a2630;border-radius:10px;padding:10px;background:#21171d;font-size:12px;color:#f5dce6;';
-    add.parentNode.appendChild(btn);add.parentNode.appendChild(result);
+    add.parentNode.appendChild(btn);add.parentNode.appendChild(clearBtn);add.parentNode.appendChild(result);
+    clearBtn.onclick=function(){
+      if(!confirm('ยืนยันล้างพนักงานทั้งหมด?\n\nระบบจะบันทึกเป็น “ไม่มีพนักงาน” และจะไม่แตะข้อมูลธุรกรรม'))return;
+      clearBtn.disabled=true;clearBtn.textContent='กำลังล้างและบันทึก...';
+      saveAllStaffsEmpty().then(function(){
+        alert('✅ ล้างพนักงานทั้งหมดและบันทึกแล้ว');
+        try{location.reload();}catch(e){window.location.reload();}
+      }).catch(function(e){alert('❌ '+e.message);clearBtn.disabled=false;clearBtn.textContent='🗑️ ล้างพนักงานทั้งหมด + บันทึก';});
+    };
     btn.onclick=function(){
       btn.disabled=true;btn.textContent='กำลังสร้าง ID...';
       loadAccounts().then(function(list){
