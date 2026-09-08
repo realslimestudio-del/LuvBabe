@@ -9,20 +9,22 @@ self.addEventListener('activate', event => event.waitUntil(self.clients.claim())
 
 let lastStaffSnapshot = null;
 let lastStaffWriteAt = 0;
-let clearLockUntil = 0;
+let localClearedIds = new Set();
 
 async function mantleGetStaffState() {
   try {
     const r = await fetch(MANTLE_STAFFS, {cache:'no-store', mode:'cors'});
-    if (r.status === 404) return {status:'missing', found:false, staffs:null};
-    if (!r.ok) return {status:'error', found:false, staffs:null};
+    if (r.status === 404) return {status:'missing', found:false, staffs:null, clearedIds:[]};
+    if (!r.ok) return {status:'error', found:false, staffs:null, clearedIds:[]};
     const d = await r.json();
-    if (d && Array.isArray(d.staffs)) return {status:'ok', found:true, staffs:d.staffs};
-    if (Array.isArray(d)) return {status:'ok', found:true, staffs:d};
-    if (d && d.cleared === true) return {status:'ok', found:true, staffs:[]};
-    return {status:'ok', found:true, staffs:[]};
+    const clearedIds = Array.isArray(d?.clearedIds) ? d.clearedIds.filter(Boolean) : [];
+    localClearedIds = new Set(clearedIds);
+    if (d && Array.isArray(d.staffs)) return {status:'ok', found:true, staffs:d.staffs, clearedIds};
+    if (Array.isArray(d)) return {status:'ok', found:true, staffs:d, clearedIds};
+    if (d && d.cleared === true) return {status:'ok', found:true, staffs:[], clearedIds};
+    return {status:'ok', found:true, staffs:[], clearedIds};
   } catch (e) {
-    return {status:'error', found:false, staffs:null};
+    return {status:'error', found:false, staffs:null, clearedIds:Array.from(localClearedIds)};
   }
 }
 
@@ -32,17 +34,40 @@ function queueStaffSave(staffs) {
   staffSaveQueue = staffSaveQueue.then(async () => {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
+        const state = await mantleGetStaffState();
+        let effective = snapshot;
+        let clearedIds = new Set(state.clearedIds || Array.from(localClearedIds));
+
+        if (snapshot.length === 0) {
+          // A clear is a durable tombstone: remember every staff ID that
+          // existed before the clear so an older tab/autosave can never
+          // resurrect those same records later.
+          const previous = Array.isArray(state.staffs) ? state.staffs : (Array.isArray(lastStaffSnapshot) ? lastStaffSnapshot : []);
+          previous.forEach(x => { if (x && x.id != null) clearedIds.add(String(x.id)); });
+          effective = [];
+        } else if (clearedIds.size) {
+          // New staff receive fresh IDs. Remove only IDs that were known to
+          // exist before a clear; keep genuinely new staff additions.
+          effective = snapshot.filter(x => !clearedIds.has(String(x?.id ?? '')));
+        }
+
+        const body = {
+          staffs: effective,
+          cleared: effective.length === 0,
+          clearedIds: Array.from(clearedIds),
+          updatedAt: new Date().toISOString()
+        };
         const r = await fetch(MANTLE_STAFFS, {
           method:'POST',
           headers:{'Content-Type':'application/json'},
           cache:'no-store',
           mode:'cors',
-          body:JSON.stringify({staffs:snapshot,cleared:snapshot.length===0,updatedAt:new Date().toISOString()})
+          body:JSON.stringify(body)
         });
         if (r.ok) {
-          lastStaffSnapshot = snapshot;
+          localClearedIds = clearedIds;
+          lastStaffSnapshot = effective.map(x => ({...x}));
           lastStaffWriteAt = Date.now();
-          if (snapshot.length === 0) clearLockUntil = Date.now() + 3000;
           return true;
         }
       } catch (e) {}
@@ -142,16 +167,9 @@ self.addEventListener('fetch', event => {
         let payload = null;
         try { payload = await req.clone().json(); } catch (e) {}
         if (payload && Array.isArray(payload.staffs)) {
-          // Ignore a very-late stale non-empty autosave that arrives immediately
-          // after the user has explicitly cleared everyone.
-          if (payload.staffs.length > 0 && Date.now() < clearLockUntil) {
-            const clean = {...payload};
-            delete clean.staffs;
-            const headers = new Headers(req.headers);
-            headers.delete('content-length');
-            return fetch(new Request(req.url,{method:'POST',headers,body:JSON.stringify(clean),mode:'cors',credentials:req.credentials,cache:'no-store'}));
-          }
-
+          // Staff persistence is handled separately in Mantle. The original
+          // transaction payload is forwarded unchanged except for removing
+          // the staffs field, so transaction/sales data is not modified.
           await queueStaffSave(payload.staffs);
           const clean = {...payload};
           delete clean.staffs;
