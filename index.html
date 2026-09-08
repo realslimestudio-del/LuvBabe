@@ -12,32 +12,85 @@
   function makeId(list){var n=1;while(list.some(function(x){return x&&x.username==='friend'+String(n).padStart(2,'0')}))n++;return 'friend'+String(n).padStart(2,'0')}
   function randomString(n){var s='',c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';for(var i=0;i<n;i++)s+=c[Math.floor(Math.random()*c.length)];return s}
   function copy(t){return navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject(new Error('คัดลอกไม่ได้'))}
-
-  /* ===== Cloud employee/account manager ===== */
-  function installManager(){
-    if(document.getElementById('luv-manager'))return;
-    var box=document.createElement('div');box.id='luv-manager';
-    box.innerHTML='<button id="luv-manager-toggle" type="button">⚙️ จัดการพนักงาน</button><div id="luv-manager-panel"><div style="font-weight:800;font-size:16px;margin-bottom:4px">จัดการพนักงาน / บัญชี</div><div id="luv-manager-status" style="font-size:12px;opacity:.8;margin-bottom:10px">กำลังโหลด...</div><div id="luv-manager-list"></div><div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px"><button id="luv-add" type="button">➕ เพิ่มพนักงาน</button><button id="luv-save" type="button">💾 บันทึกขึ้นออนไลน์</button><button id="luv-reload" type="button">🔄 โหลดล่าสุด</button><button id="luv-clear" type="button">🗑️ ล้างพนักงานทั้งหมด</button></div><div style="font-size:11px;opacity:.65;margin-top:8px">ข้อมูลจะถูกบันทึกไว้บนคลาวด์ เมื่อรีเฟรชหน้าเว็บจะโหลดกลับมาอัตโนมัติ</div></div>';
-    var style=document.createElement('style');style.textContent='#luv-manager{position:fixed;right:14px;bottom:14px;z-index:2147483647;font-family:system-ui,-apple-system,Segoe UI,sans-serif}#luv-manager-toggle{border:1px solid #ff4d8d;background:#21131b;color:#ff9abe;border-radius:12px;padding:10px 14px;font-weight:800;cursor:pointer;box-shadow:0 5px 20px #0008}#luv-manager-panel{display:none;width:min(440px,calc(100vw - 28px));max-height:75vh;overflow:auto;margin-top:8px;padding:14px;border:1px solid #4b2b38;border-radius:14px;background:#160e13;color:#fff;box-shadow:0 12px 40px #000b}#luv-manager-panel.open{display:block}#luv-manager-list{display:grid;gap:8px}.luv-row{border:1px solid #38232c;border-radius:10px;padding:9px;background:#21171d}.luv-row input,.luv-row select{box-sizing:border-box;width:100%;margin:3px 0;padding:8px;border-radius:7px;border:1px solid #51323e;background:#120b0f;color:#fff}.luv-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.luv-del{margin-top:5px;width:100%;padding:7px;border:1px solid #b63d5f;background:transparent;color:#ff8aa9;border-radius:7px;cursor:pointer}.luv-actions button{padding:8px 10px;border:1px solid #ff4d8d;border-radius:8px;background:#24141c;color:#fff;cursor:pointer;font-weight:700}.luv-ok{color:#79e0a3}.luv-err{color:#ff829f}';document.head.appendChild(style);document.body.appendChild(box);
-    var panel=document.getElementById('luv-manager-panel');document.getElementById('luv-manager-toggle').onclick=function(){panel.classList.toggle('open');if(panel.classList.contains('open'))refresh()};
-    var accounts=[];
-    function status(t,ok){var e=document.getElementById('luv-manager-status');e.textContent=t;e.className=ok?'luv-ok':'luv-err'}
-    function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-    function render(){var list=document.getElementById('luv-manager-list');if(!accounts.length){list.innerHTML='<div style="padding:12px;border:1px dashed #543442;border-radius:9px;opacity:.8">ยังไม่มีพนักงาน</div>';return}list.innerHTML=accounts.map(function(a,i){a=a||{};return '<div class="luv-row"><div style="font-size:11px;opacity:.65;margin-bottom:3px">พนักงาน #'+(i+1)+'</div><div class="luv-grid"><label style="font-size:11px">ID<input data-i="'+i+'" data-k="username" value="'+esc(a.username)+'"></label><label style="font-size:11px">รหัสผ่าน<input data-i="'+i+'" data-k="password" value="'+esc(a.password)+'"></label></div><label style="font-size:11px">สิทธิ์<select data-i="'+i+'" data-k="role"><option value="partner" '+(a.role==='partner'?'selected':'')+'>partner</option><option value="admin" '+(a.role==='admin'?'selected':'')+'>admin</option></select></label><button class="luv-del" data-del="'+i+'" type="button">🗑️ ลบพนักงานนี้</button></div>'}).join('');
-      Array.prototype.forEach.call(list.querySelectorAll('[data-i]'),function(el){el.oninput=el.onchange=function(){accounts[Number(el.dataset.i)][el.dataset.k]=el.value;status('มีการแก้ไข — กด 💾 บันทึกขึ้นออนไลน์',false)}});
-      Array.prototype.forEach.call(list.querySelectorAll('[data-del]'),function(el){el.onclick=function(){var i=Number(el.dataset.del),name=accounts[i]&&accounts[i].username||('พนักงาน #'+(i+1));if(confirm('ต้องการลบ '+name+' ใช่หรือไม่?')){accounts.splice(i,1);render();saveNow()}}});
-    }
-    function refresh(){status('กำลังโหลดจากคลาวด์...',false);loadAccounts().then(function(a){accounts=a.map(function(x){return Object.assign({},x)});render();status('โหลดแล้ว '+accounts.length+' บัญชี',true)}).catch(function(e){status('❌ '+e.message,false)})}
-    function saveNow(){var btn=document.getElementById('luv-save');btn.disabled=true;status('กำลังบันทึก...',false);saveAccounts(accounts).then(function(){status('✅ บันทึกแล้ว '+accounts.length+' บัญชี — รีเฟรชได้',true)}).catch(function(e){status('❌ '+e.message,false)}).finally(function(){btn.disabled=false})}
-    document.getElementById('luv-save').onclick=saveNow;document.getElementById('luv-reload').onclick=refresh;
-    document.getElementById('luv-add').onclick=function(){accounts.push({username:makeId(accounts),password:randomString(10),role:'partner',allowedTabs:[]});render();status('เพิ่มพนักงานแล้ว — กำลังบันทึก...',false);saveNow()};
-    document.getElementById('luv-clear').onclick=function(){if(!accounts.length){alert('ไม่มีพนักงานให้ล้าง');return}if(confirm('⚠️ ต้องการล้างพนักงานทั้งหมด '+accounts.length+' บัญชีใช่หรือไม่?\nการกระทำนี้จะบันทึกขึ้นออนไลน์ทันที')){accounts=[];render();saveNow()}};
-    refresh();
+  function text(el){return (el&&el.textContent||'').replace(/\s+/g,' ').trim()}
+  function buttons(doc){return Array.prototype.slice.call(doc.querySelectorAll('button'))}
+  function findButton(doc,needle){needle=String(needle).toLowerCase();return buttons(doc).find(function(b){return text(b).toLowerCase().indexOf(needle)>=0})}
+  function findEmployeeInput(doc){var xs=Array.prototype.slice.call(doc.querySelectorAll('input'));return xs.find(function(x){var p=(x.placeholder||'').toLowerCase();return p.indexOf('ชื่อพนักงาน')>=0||p.indexOf('พนักงานใหม่')>=0})}
+  function findEmployeeCards(doc){
+    var out=[];
+    buttons(doc).forEach(function(btn){var t=text(btn).toLowerCase();if(t.indexOf('clock in')<0&&t.indexOf('clock out')<0&&t.indexOf('เข้าเวร')<0&&t.indexOf('ลงเวลา')<0)return;var el=btn;for(var n=0;n<7&&el;n++,el=el.parentElement){var inputs=el.querySelectorAll?el.querySelectorAll('input'):[];if(inputs.length>=1){out.push(el);break}}});
+    return out.filter(function(x,i,a){return a.indexOf(x)===i});
   }
-
-  function install(doc){if(!doc)return;var add=doc.getElementById('loveb-add-user-btn');if(!add||doc.getElementById('loveb-create-friend-btn'))return;var btn=doc.createElement('button');btn.id='loveb-create-friend-btn';btn.type='button';btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';btn.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #ff4d8d;background:transparent;color:#ff7aaa;font-weight:600;font-size:13px;cursor:pointer;';var result=doc.createElement('div');result.id='loveb-friend-result';result.style.cssText='display:none;margin-top:10px;border:1px solid #3a2630;border-radius:10px;padding:10px;background:#21171d;font-size:12px;color:#f5dce6;';add.parentNode.appendChild(btn);add.parentNode.appendChild(result);btn.onclick=function(){btn.disabled=true;btn.textContent='กำลังสร้าง ID...';loadAccounts().then(function(list){var id=makeId(list),pass=randomString(10),tabs=[],checks=doc.querySelectorAll('.loveb-new-tab-chk:checked');for(var i=0;i<checks.length;i++)tabs.push(checks[i].value);list.push({username:id,password:pass,role:'partner',allowedTabs:tabs});return saveAccounts(list).then(function(){var link=window.location.origin+window.location.pathname+'?id='+encodeURIComponent(id);result.style.display='block';result.innerHTML='<div style="font-weight:700;color:#ff8bb5;margin-bottom:6px">✅ สร้าง ID ให้เพื่อนแล้ว</div><div>🆔 ID: <b>'+id+'</b></div><div>🔑 รหัสผ่าน: <b>'+pass+'</b></div><div style="word-break:break-all;margin-top:4px">🔗 ลิงก์: <span>'+link+'</span></div><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button id="copy-friend" style="padding:7px 9px;border:0;border-radius:7px;background:#ff4d8d;color:#fff">คัดลอก ID/รหัส</button><button id="copy-link" style="padding:7px 9px;border:1px solid #ff4d8d;background:transparent;color:#ff9abe">คัดลอกลิงก์</button></div>';doc.getElementById('copy-friend').onclick=function(){copy(id+'\n'+pass).then(function(){alert('คัดลอก ID และรหัสผ่านแล้ว')})};doc.getElementById('copy-link').onclick=function(){copy(link).then(function(){alert('คัดลอกลิงก์แล้ว')})};alert('✅ สร้าง ID ให้เพื่อนสำเร็จ\nID: '+id+'\nรหัสผ่าน: '+pass)})}).catch(function(e){result.style.display='block';result.textContent='❌ '+e.message}).finally(function(){btn.disabled=false;btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ'})};var friendId=new URLSearchParams(window.location.search).get('id');if(friendId){var input=doc.getElementById('loveb-auth-user');if(input)input.value=friendId}}
-  function boot(){installManager();frame.src='index (1).html'+(window.location.search||'');frame.addEventListener('load',function(){var doc=frame.contentDocument||frame.contentWindow.document;install(doc);if(doc.documentElement){var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true})}})}
-  if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js?v=20260908-15',{scope:'./'}).then(function(reg){return reg.update().then(function(){return navigator.serviceWorker.ready})}).then(boot).catch(boot)}else boot()
+  function cardName(card){
+    var all=card.querySelectorAll?card.querySelectorAll('*'):[];
+    for(var i=0;i<all.length;i++){var t=text(all[i]);if(!t||t.length>50)continue;if(/^\S{1,30}\s*[•·]?$/.test(t)&&!/^\d/.test(t)&&t.indexOf('Clock')<0&&t.indexOf('คอมมิชชั่น')<0&&t.indexOf('กำไร')<0&&t.indexOf('ธุรกรรม')<0&&t.indexOf('ปิดขาย')<0)return t.replace(/[•·]$/,'').trim()}
+    return '';
+  }
+  function captureEmployees(doc){
+    var cards=findEmployeeCards(doc), names=[];
+    cards.forEach(function(card){var n=cardName(card);if(n&&names.indexOf(n)<0)names.push(n)});
+    return names;
+  }
+  function setInputValue(input,value,doc){
+    var setter=Object.getOwnPropertyDescriptor((input.ownerDocument.defaultView.HTMLInputElement||HTMLInputElement).prototype,'value');
+    if(setter&&setter.set)setter.set.call(input,value);else input.value=value;
+    input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  function employeeSync(doc){
+    if(!doc||doc.getElementById('luv-employee-sync'))return;
+    var marker=doc.createElement('meta');marker.id='luv-employee-sync';doc.head.appendChild(marker);
+    var syncing=false,saveTimer=null;
+    function current(){return captureEmployees(doc)}
+    function saveFromPage(){
+      if(syncing)return;
+      clearTimeout(saveTimer);saveTimer=setTimeout(function(){
+        var names=current();
+        loadAccounts().then(function(old){
+          var keep={};old.forEach(function(a){if(a&&a.username)keep[a.username]=a});
+          var list=names.map(function(name){return keep[name]||{username:name,password:randomString(10),role:'partner',allowedTabs:[]}});
+          return saveAccounts(list);
+        }).catch(function(){/* หน้าใช้งานต่อได้แม้คลาวด์ชั่วคราวไม่พร้อม */});
+      },700);
+    }
+    function syncFromCloud(){
+      loadAccounts().then(function(accounts){
+        if(!accounts.length)return;
+        var input=findEmployeeInput(doc),add=findButton(doc,'เพิ่ม'),clear=findButton(doc,'ล้างพนักงานทั้งหมด');
+        if(!input||!add)return;
+        var wanted=accounts.map(function(a){return a&&a.username}).filter(Boolean),now=current();
+        if(wanted.length===now.length&&wanted.every(function(n,i){return n===now[i]}))return;
+        syncing=true;
+        var done=Promise.resolve();
+        if(clear&&now.length)done=done.then(function(){clear.click();return new Promise(function(r){setTimeout(r,250)})});
+        wanted.forEach(function(name){done=done.then(function(){setInputValue(input,name,doc);add.click();return new Promise(function(r){setTimeout(r,220)})})});
+        done.then(function(){syncing=false}).catch(function(){syncing=false});
+      }).catch(function(){});
+    }
+    doc.addEventListener('click',function(e){
+      var b=e.target&&e.target.closest?e.target.closest('button'):null;
+      if(!b)return;
+      var t=text(b).toLowerCase();
+      if(t.indexOf('เพิ่ม')>=0||t.indexOf('ล้างพนักงานทั้งหมด')>=0||t==='×'||t==='✕')saveFromPage();
+    },true);
+    var observer=new MutationObserver(function(){
+      if(!syncing){var input=findEmployeeInput(doc);if(input&&input.dataset.luvSyncBound!=='1'){input.dataset.luvSyncBound='1';input.addEventListener('change',saveFromPage);}}
+    });
+    observer.observe(doc.body,{subtree:true,childList:true});
+    setTimeout(syncFromCloud,900);
+  }
+  function installFriendButton(doc){
+    if(!doc)return;
+    var add=doc.getElementById('loveb-add-user-btn');
+    if(!add||doc.getElementById('loveb-create-friend-btn'))return;
+    var btn=doc.createElement('button');btn.id='loveb-create-friend-btn';btn.type='button';btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';btn.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #ff4d8d;background:transparent;color:#ff7aaa;font-weight:600;font-size:13px;cursor:pointer;';
+    var result=doc.createElement('div');result.id='loveb-friend-result';result.style.cssText='display:none;margin-top:10px;border:1px solid #3a2630;border-radius:10px;padding:10px;background:#21171d;font-size:12px;color:#f5dce6;';
+    add.parentNode.appendChild(btn);add.parentNode.appendChild(result);
+    btn.onclick=function(){btn.disabled=true;btn.textContent='กำลังสร้าง ID...';loadAccounts().then(function(list){var id=makeId(list),pass=randomString(10),tabs=[],checks=doc.querySelectorAll('.loveb-new-tab-chk:checked');for(var i=0;i<checks.length;i++)tabs.push(checks[i].value);list.push({username:id,password:pass,role:'partner',allowedTabs:tabs});return saveAccounts(list).then(function(){var link=window.location.origin+window.location.pathname+'?id='+encodeURIComponent(id);result.style.display='block';result.innerHTML='<div style="font-weight:700;color:#ff8bb5;margin-bottom:6px">✅ สร้าง ID ให้เพื่อนแล้ว</div><div>🆔 ID: <b>'+id+'</b></div><div>🔑 รหัสผ่าน: <b>'+pass+'</b></div><div style="word-break:break-all;margin-top:4px">🔗 ลิงก์: <span>'+link+'</span></div><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button id="copy-friend" style="padding:7px 9px;border:0;border-radius:7px;background:#ff4d8d;color:#fff">คัดลอก ID/รหัส</button><button id="copy-link" style="padding:7px 9px;border:1px solid #ff4d8d;background:transparent;color:#ff9abe">คัดลอกลิงก์</button></div>';doc.getElementById('copy-friend').onclick=function(){copy(id+'\n'+pass).then(function(){alert('คัดลอก ID และรหัสผ่านแล้ว')})};doc.getElementById('copy-link').onclick=function(){copy(link).then(function(){alert('คัดลอกลิงก์แล้ว')})};alert('✅ สร้าง ID ให้เพื่อนสำเร็จ\nID: '+id+'\nรหัสผ่าน: '+pass)})}).catch(function(e){result.style.display='block';result.textContent='❌ '+e.message}).finally(function(){btn.disabled=false;btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ'})};
+    var friendId=new URLSearchParams(window.location.search).get('id');if(friendId){var input=doc.getElementById('loveb-auth-user');if(input)input.value=friendId}
+  }
+  function install(doc){installFriendButton(doc);employeeSync(doc)}
+  function boot(){frame.src='index (1).html'+(window.location.search||'');frame.addEventListener('load',function(){var doc=frame.contentDocument||frame.contentWindow.document;install(doc);if(doc.documentElement){var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true})}})}
+  if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js?v=20260908-16',{scope:'./'}).then(function(reg){return reg.update().then(function(){return navigator.serviceWorker.ready})}).then(boot).catch(boot)}else boot()
 })();
 </script>
 </body>
