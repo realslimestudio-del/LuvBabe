@@ -12,23 +12,29 @@ async function mantleGetStaffs() {
     const r = await fetch(MANTLE_STAFFS, {cache:'no-store', mode:'cors'});
     if (!r.ok) return null;
     const d = await r.json();
-    if (Array.isArray(d)) return d;
     if (d && Array.isArray(d.staffs)) return d.staffs;
+    if (Array.isArray(d)) return d;
   } catch (e) {}
   return null;
 }
 
-async function mantleSaveStaffs(staffs) {
-  try {
-    const r = await fetch(MANTLE_STAFFS, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      cache:'no-store',
-      mode:'cors',
-      body:JSON.stringify(staffs)
-    });
-    return r.ok;
-  } catch (e) { return false; }
+// Serialize staff writes so a quick edit/clear cannot be overwritten by an older save.
+let staffSaveQueue = Promise.resolve();
+function queueStaffSave(staffs) {
+  const snapshot = Array.isArray(staffs) ? staffs.map(x => ({...x})) : [];
+  staffSaveQueue = staffSaveQueue.then(async () => {
+    try {
+      const r = await fetch(MANTLE_STAFFS, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        cache:'no-store',
+        mode:'cors',
+        body:JSON.stringify({staffs:snapshot})
+      });
+      return r.ok;
+    } catch (e) { return false; }
+  });
+  return staffSaveQueue;
 }
 
 self.addEventListener('fetch', event => {
@@ -59,8 +65,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // ธุรกรรมเดิม: ยังคงใช้ Pantry เดิม แต่แยก staffs ออกจาก basket ธุรกรรม
-  // เพื่อให้เพิ่ม/แก้ไข/ลบพนักงานไม่เขียนทับยอดซื้อ-ขาย
+  // ธุรกรรมเดิม: Pantry เดิม 100% แต่ staffs แยกไปเก็บต่างหาก
   if (isDataBasket) {
     event.respondWith((async () => {
       const req = event.request;
@@ -72,8 +77,13 @@ self.addEventListener('fetch', event => {
           if (!original.ok) return original;
           const data = await original.clone().json();
           const staffs = await mantleGetStaffs();
-          if (staffs !== null) data.staffs = staffs;
-          else if (Array.isArray(data.staffs) && data.staffs.length) mantleSaveStaffs(data.staffs);
+          if (staffs !== null) {
+            // สำคัญ: [] เป็นค่าที่ถูกต้อง ต้อง overlay เพื่อให้ล้างทั้งหมดแล้วไม่กลับมา
+            data.staffs = staffs;
+          } else if (Array.isArray(data.staffs)) {
+            // ครั้งแรกเท่านั้น: ย้ายค่าเดิมจาก Pantry ไป Mantle รวมถึง []
+            await queueStaffSave(data.staffs);
+          }
           return new Response(JSON.stringify(data), {
             status: original.status,
             statusText: original.statusText,
@@ -89,8 +99,10 @@ self.addEventListener('fetch', event => {
         try { payload = await req.clone().json(); } catch (e) {}
 
         if (payload && Array.isArray(payload.staffs)) {
-          // บันทึกพนักงานแยกก่อน โดยไม่แก้ข้อมูลซื้อ/ขาย/พรีเมียม/โอน
-          await mantleSaveStaffs(payload.staffs);
+          // บันทึก staffs แยก แม้เป็น [] และรอให้เขียนเสร็จ ก่อนตอบกลับ
+          await queueStaffSave(payload.staffs);
+
+          // ส่งข้อมูลธุรกรรมเดิมกลับ Pantry โดยตัดเฉพาะ staffs ออก
           const clean = {...payload};
           delete clean.staffs;
           const headers = new Headers(req.headers);
@@ -111,5 +123,5 @@ self.addEventListener('fetch', event => {
     })());
   }
 
-  // ทุก basket อื่น ๆ ปล่อยผ่าน Pantry เดิม 100%
+  // basket อื่น ๆ ผ่าน Pantry เดิม 100%
 });
