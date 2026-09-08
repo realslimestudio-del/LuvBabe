@@ -10,59 +10,30 @@
 <iframe id="luv-app" title="LuvBabe"></iframe>
 <script>
 (function(){
-  var CLOUD='https://getpantry.cloud/apiv1/pantry/af4b9c-loveb-store-ratchaburi/basket/loveb_accounts_v1';
+  var CLOUD='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/accounts';
   var frame=document.getElementById('luv-app');
-  var qs=window.location.search||'';
-  frame.src='index (1).html'+qs;
-
   function randomString(len){
-    var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; var out='';
-    if(window.crypto&&window.crypto.getRandomValues){
-      var a=new Uint32Array(len); window.crypto.getRandomValues(a);
-      for(var i=0;i<len;i++) out+=chars[a[i]%chars.length];
-    }else for(var j=0;j<len;j++) out+=chars[Math.floor(Math.random()*chars.length)];
+    var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',out='';
+    if(window.crypto&&window.crypto.getRandomValues){var a=new Uint32Array(len);window.crypto.getRandomValues(a);for(var i=0;i<len;i++)out+=chars[a[i]%chars.length];}
+    else for(var j=0;j<len;j++)out+=chars[Math.floor(Math.random()*chars.length)];
     return out;
   }
-  function makeId(list){
-    var id; do{id='FRIEND-'+randomString(6);}while(list.some(function(a){return a.username===id;})); return id;
-  }
-  function copy(text){
-    if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(text);
-    var t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(t);return Promise.resolve();
-  }
-  function loadAccounts(){
-    return fetch(CLOUD,{cache:'no-store'}).then(function(r){
-      if(!r.ok)throw new Error('โหลดบัญชีไม่ได้');
-      return r.json();
-    }).then(function(d){
-      if(!d||!Array.isArray(d.accounts))throw new Error('ข้อมูลบัญชีไม่ถูกต้อง');
-      return d.accounts;
-    });
-  }
-  function saveAccounts(list){
-    var body=JSON.stringify({accounts:list});
-    return fetch(CLOUD,{method:'PUT',headers:{'Content-Type':'application/json'},body:body}).then(function(r){
-      if(r.ok)return true;
-      return fetch(CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},body:body}).then(function(x){return x.ok;});
-    }).catch(function(){
-      return fetch(CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},body:body}).then(function(x){return x.ok;}).catch(function(){return false;});
-    });
-  }
+  function makeId(list){var id;do{id='FRIEND-'+randomString(6)}while(list.some(function(a){return a.username===id}));return id;}
+  function copy(text){if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(text);var t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(t);return Promise.resolve();}
+  function loadAccounts(){return fetch(CLOUD,{cache:'no-store'}).then(function(r){if(r.status===404)return [];if(!r.ok)throw new Error('โหลดบัญชีไม่ได้');return r.json()}).then(function(d){return Array.isArray(d)?d:(d&&Array.isArray(d.accounts)?d.accounts:[])})}
+  function saveAccounts(list){return fetch(CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accounts:list})}).then(function(r){return r.ok})}
   function install(doc){
     if(!doc)return;
     var add=doc.getElementById('loveb-add-user-btn');
     if(!add||doc.getElementById('loveb-create-friend-btn'))return;
-    var btn=doc.createElement('button');
-    btn.id='loveb-create-friend-btn';btn.type='button';
-    btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';
+    var btn=doc.createElement('button');btn.id='loveb-create-friend-btn';btn.type='button';btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';
     btn.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #ff4d8d;background:transparent;color:#ff7aaa;font-weight:600;font-size:13px;cursor:pointer;';
     var result=doc.createElement('div');result.id='loveb-friend-result';result.style.cssText='display:none;margin-top:10px;border:1px solid #3a2630;border-radius:10px;padding:10px;background:#21171d;font-size:12px;color:#f5dce6;';
     add.parentNode.appendChild(btn);add.parentNode.appendChild(result);
     btn.onclick=function(){
       btn.disabled=true;btn.textContent='กำลังสร้าง ID...';
       loadAccounts().then(function(list){
-        var id=makeId(list), pass=randomString(10), tabs=[];
-        var checks=doc.querySelectorAll('.loveb-new-tab-chk:checked');
+        var id=makeId(list),pass=randomString(10),tabs=[],checks=doc.querySelectorAll('.loveb-new-tab-chk:checked');
         for(var i=0;i<checks.length;i++)tabs.push(checks[i].value);
         list.push({username:id,password:pass,role:'partner',allowedTabs:tabs});
         return saveAccounts(list).then(function(ok){
@@ -74,16 +45,18 @@
           doc.getElementById('copy-link').onclick=function(){copy(link).then(function(){alert('คัดลอกลิงก์แล้ว')})};
           alert('✅ สร้าง ID ให้เพื่อนสำเร็จ\nID: '+id+'\nรหัสผ่าน: '+pass);
         });
-      }).catch(function(e){result.style.display='block';result.textContent='❌ '+e.message;}).finally(function(){btn.disabled=false;btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';});
+      }).catch(function(e){result.style.display='block';result.textContent='❌ '+e.message}).finally(function(){btn.disabled=false;btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ'});
     };
     var friendId=new URLSearchParams(window.location.search).get('id');
     if(friendId){var input=doc.getElementById('loveb-auth-user');if(input)input.value=friendId;}
   }
-  frame.addEventListener('load',function(){
-    var doc=frame.contentDocument||frame.contentWindow.document;
-    install(doc);
-    var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true});
-  });
+  function boot(){
+    frame.src='index (1).html'+(window.location.search||'');
+    frame.addEventListener('load',function(){var doc=frame.contentDocument||frame.contentWindow.document;install(doc);var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true});});
+  }
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js',{scope:'./'}).then(function(){return navigator.serviceWorker.ready}).then(boot).catch(boot);
+  }else boot();
 })();
 </script>
 </body>
