@@ -4,7 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LuvBabe</title>
-<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111}iframe{display:block;width:100%;height:100%;border:0}</style>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111}
+iframe{display:block;width:100%;height:100%;border:0}
+#luv-staff-tools{position:fixed;right:18px;bottom:18px;z-index:2147483647;display:flex;gap:8px;align-items:center;font-family:Arial,sans-serif}
+#luv-staff-clear{padding:12px 15px;border-radius:12px;border:1px solid #ff6b6b;background:#b92f45;color:#fff;font-weight:800;font-size:14px;box-shadow:0 4px 18px #0008;cursor:pointer}
+#luv-staff-clear:hover{filter:brightness(1.08)}
+#luv-staff-clear:disabled{opacity:.65;cursor:wait}
+</style>
 </head>
 <body>
 <iframe id="luv-app" title="LuvBabe"></iframe>
@@ -13,6 +20,7 @@
   var CLOUD='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/accounts';
   var STAFF_CLOUD='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/staffs';
   var frame=document.getElementById('luv-app');
+
   function randomString(len){
     var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',out='';
     if(window.crypto&&window.crypto.getRandomValues){var a=new Uint32Array(len);window.crypto.getRandomValues(a);for(var i=0;i<len;i++)out+=chars[a[i]%chars.length];}
@@ -22,34 +30,40 @@
   function makeId(list){var id;do{id='FRIEND-'+randomString(6)}while(list.some(function(a){return a.username===id}));return id;}
   function copy(text){if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(text);var t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(t);return Promise.resolve();}
   function loadAccounts(){return fetch(CLOUD,{cache:'no-store'}).then(function(r){if(r.status===404)return [];if(!r.ok)throw new Error('โหลดบัญชีไม่ได้');return r.json()}).then(function(d){return Array.isArray(d)?d:(d&&Array.isArray(d.accounts)?d.accounts:[])})}
-  function saveAccounts(list){return fetch(CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accounts:list})}).then(function(r){return r.ok})}
-  function saveAllStaffsEmpty(){return fetch(STAFF_CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({staffs:[]})}).then(function(r){if(!r.ok)throw new Error('บันทึกการล้างพนักงานไม่สำเร็จ');return true;})}
+  function saveAccounts(list){return fetch(CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({accounts:list})}).then(function(r){if(!r.ok)throw new Error('บันทึกบัญชีขึ้นคลาวด์ไม่สำเร็จ');return true})}
+  function clearStaffCloud(){return fetch(STAFF_CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({staffs:[],cleared:true,updatedAt:new Date().toISOString()})}).then(function(r){if(!r.ok)throw new Error('เซิร์ฟเวอร์ไม่ยอมบันทึก');return true})}
+
+  // ปุ่มล้างพนักงานอยู่ที่หน้าหลักโดยตรง ไม่ขึ้นกับ DOM ของแอปด้านใน
+  var tools=document.createElement('div');tools.id='luv-staff-tools';
+  var clearTop=document.createElement('button');clearTop.id='luv-staff-clear';clearTop.type='button';clearTop.textContent='🗑️ ล้างพนักงานทั้งหมด + บันทึก';
+  tools.appendChild(clearTop);document.body.appendChild(tools);
+  clearTop.onclick=function(){
+    if(!confirm('ยืนยันล้างพนักงานทั้งหมด?\n\nระบบจะบันทึกเป็น “ไม่มีพนักงาน”\nและจะไม่แก้ไขยอดขายหรือข้อมูลธุรกรรม'))return;
+    clearTop.disabled=true;clearTop.textContent='⏳ กำลังบันทึก...';
+    clearStaffCloud().then(function(){
+      alert('✅ ล้างพนักงานทั้งหมดและบันทึกถาวรแล้ว');
+      window.location.reload();
+    }).catch(function(e){
+      alert('❌ บันทึกไม่สำเร็จ: '+e.message+'\n\nกรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
+      clearTop.disabled=false;clearTop.textContent='🗑️ ล้างพนักงานทั้งหมด + บันทึก';
+    });
+  };
+
   function install(doc){
     if(!doc)return;
     var add=doc.getElementById('loveb-add-user-btn');
     if(!add||doc.getElementById('loveb-create-friend-btn'))return;
     var btn=doc.createElement('button');btn.id='loveb-create-friend-btn';btn.type='button';btn.textContent='💗 สร้าง ID ให้เพื่อนอัตโนมัติ';
     btn.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #ff4d8d;background:transparent;color:#ff7aaa;font-weight:600;font-size:13px;cursor:pointer;';
-    var clearBtn=doc.createElement('button');clearBtn.id='loveb-clear-staff-save-btn';clearBtn.type='button';clearBtn.textContent='🗑️ ล้างพนักงานทั้งหมด + บันทึก';
-    clearBtn.style.cssText='width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid #ff6b6b;background:transparent;color:#ff8585;font-weight:700;font-size:13px;cursor:pointer;';
     var result=doc.createElement('div');result.id='loveb-friend-result';result.style.cssText='display:none;margin-top:10px;border:1px solid #3a2630;border-radius:10px;padding:10px;background:#21171d;font-size:12px;color:#f5dce6;';
-    add.parentNode.appendChild(btn);add.parentNode.appendChild(clearBtn);add.parentNode.appendChild(result);
-    clearBtn.onclick=function(){
-      if(!confirm('ยืนยันล้างพนักงานทั้งหมด?\n\nระบบจะบันทึกเป็น “ไม่มีพนักงาน” และจะไม่แตะข้อมูลธุรกรรม'))return;
-      clearBtn.disabled=true;clearBtn.textContent='กำลังล้างและบันทึก...';
-      saveAllStaffsEmpty().then(function(){
-        alert('✅ ล้างพนักงานทั้งหมดและบันทึกแล้ว');
-        try{location.reload();}catch(e){window.location.reload();}
-      }).catch(function(e){alert('❌ '+e.message);clearBtn.disabled=false;clearBtn.textContent='🗑️ ล้างพนักงานทั้งหมด + บันทึก';});
-    };
+    add.parentNode.appendChild(btn);add.parentNode.appendChild(result);
     btn.onclick=function(){
       btn.disabled=true;btn.textContent='กำลังสร้าง ID...';
       loadAccounts().then(function(list){
         var id=makeId(list),pass=randomString(10),tabs=[],checks=doc.querySelectorAll('.loveb-new-tab-chk:checked');
         for(var i=0;i<checks.length;i++)tabs.push(checks[i].value);
         list.push({username:id,password:pass,role:'partner',allowedTabs:tabs});
-        return saveAccounts(list).then(function(ok){
-          if(!ok)throw new Error('บันทึกบัญชีขึ้นคลาวด์ไม่สำเร็จ');
+        return saveAccounts(list).then(function(){
           var link=window.location.origin+window.location.pathname+'?id='+encodeURIComponent(id);
           result.style.display='block';
           result.innerHTML='<div style="font-weight:700;color:#ff8bb5;margin-bottom:6px">✅ สร้าง ID ให้เพื่อนแล้ว</div><div>🆔 ID: <b>'+id+'</b></div><div>🔑 รหัสผ่าน: <b>'+pass+'</b></div><div style="word-break:break-all;margin-top:4px">🔗 ลิงก์: <span>'+link+'</span></div><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button id="copy-friend" style="padding:7px 9px;border:0;border-radius:7px;background:#ff4d8d;color:#fff">คัดลอก ID/รหัส</button><button id="copy-link" style="padding:7px 9px;border:1px solid #ff4d8d;border-radius:7px;background:transparent;color:#ff9abe">คัดลอกลิงก์</button></div>';
@@ -64,10 +78,14 @@
   }
   function boot(){
     frame.src='index (1).html'+(window.location.search||'');
-    frame.addEventListener('load',function(){var doc=frame.contentDocument||frame.contentWindow.document;install(doc);var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true});});
+    frame.addEventListener('load',function(){
+      var doc=frame.contentDocument||frame.contentWindow.document;
+      install(doc);
+      if(doc.documentElement){var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true});}
+    });
   }
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('sw.js',{scope:'./'}).then(function(){return navigator.serviceWorker.ready}).then(boot).catch(boot);
+    navigator.serviceWorker.register('sw.js?v=20260908-2',{scope:'./'}).then(function(){return navigator.serviceWorker.ready}).then(boot).catch(boot);
   }else boot();
 })();
 </script>
