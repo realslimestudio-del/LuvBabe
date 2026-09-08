@@ -1,41 +1,51 @@
-const OLD_PANTRY_PREFIX = 'https://getpantry.cloud/apiv1/pantry/af4b9c-loveb-store-ratchaburi';
-const MANTLE_ACCOUNTS = 'https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/accounts';
-const MANTLE_STAFFS = 'https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/staffs';
-const ACCOUNTS_BASKET = '/basket/loveb_accounts_v1';
-const DATA_BASKET = '/basket/loveb_pink_complete_final';
-const TRANSACTIONS_URL = new URL('transactions.json', self.registration.scope).href;
-self.addEventListener('install', event => self.skipWaiting());
-self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
-let lastStaffSnapshot = null;
-let lastStaffWriteAt = 0;
-let clearLockUntil = 0;
-let staffSaveQueue = Promise.resolve();
-let transactionCache = null;
-async function getTransactions(){
-  if(Array.isArray(transactionCache)) return transactionCache;
-  try{
-    const r=await fetch(TRANSACTIONS_URL,{cache:'no-store'});
-    if(!r.ok) throw new Error('transactions unavailable');
-    const d=await r.json();
-    if(Array.isArray(d)){transactionCache=d;return d;}
-  }catch(e){}
-  return [];
+const OLD_PANTRY_PREFIX='https://getpantry.cloud/apiv1/pantry/af4b9c-loveb-store-ratchaburi';
+const MANTLE_ACCOUNTS='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/accounts';
+const MANTLE_STAFFS='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/staffs';
+const MANTLE_DATA='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/appdata';
+const DATA_BASKET='/basket/loveb_pink_complete_final';
+const ACCOUNTS_BASKET='/basket/loveb_accounts_v1';
+const TX_URL=new URL('transactions.json',self.registration.scope).href;
+self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));
+self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
+let txCache=null;
+async function tx(){if(txCache)return txCache;try{const r=await fetch(TX_URL,{cache:'no-store'});const d=await r.json();if(Array.isArray(d))txCache=d;}catch(e){}return txCache||[];}
+async function staffs(){try{const r=await fetch(MANTLE_STAFFS,{cache:'no-store',mode:'cors'});if(!r.ok)return null;const d=await r.json();return Array.isArray(d)?d:(d&&Array.isArray(d.staffs)?d.staffs:[]);}catch(e){return null;}}
+async function saveStaffs(s){try{await fetch(MANTLE_STAFFS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({staffs:Array.isArray(s)?s:[],cleared:!Array.isArray(s)||s.length===0,updatedAt:new Date().toISOString()})});}catch(e){}}
+async function readData(){
+  try{const r=await fetch(MANTLE_DATA,{cache:'no-store',mode:'cors'});if(r.ok){const d=await r.json();if(d&&typeof d==='object')return d;}}catch(e){}
+  try{const r=await fetch(OLD_PANTRY_PREFIX+DATA_BASKET,{cache:'no-store'});if(r.ok){const d=await r.json();if(d&&typeof d==='object'){const s=await staffs();if(Array.isArray(s))d.staffs=s;if(!Array.isArray(d.transactions))d.transactions=await tx();try{await fetch(MANTLE_DATA,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});}catch(e){}return d;}}}catch(e){}
+  return {transactions:await tx(),staffs:[]};
 }
-async function getStaffs() {
-  try { const r=await fetch(MANTLE_STAFFS, {cache:'no-store', mode:'cors'}); if (r.status===404) return {missing:true,staffs:null}; if (!r.ok) return {missing:false,staffs:null}; const d=await r.json(); if(Array.isArray(d))return {missing:false,staffs:d}; if(d&&Array.isArray(d.staffs))return {missing:false,staffs:d.staffs}; if(d&&d.cleared===true)return {missing:false,staffs:[]}; return {missing:false,staffs:[]}; } catch(e){return {missing:false,staffs:null};}
+async function writeData(d){
+  try{const r=await fetch(MANTLE_DATA,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',mode:'cors',body:JSON.stringify(d)});if(r.ok)return true;}catch(e){}
+  try{const r=await fetch(OLD_PANTRY_PREFIX+DATA_BASKET,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(d)});return r.ok;}catch(e){return false;}
 }
-function saveStaffs(staffs){ const snapshot=Array.isArray(staffs)?staffs.map(x=>({...x})):[]; staffSaveQueue=staffSaveQueue.then(async()=>{for(let i=1;i<=3;i++){try{const r=await fetch(MANTLE_STAFFS,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',mode:'cors',body:JSON.stringify({staffs:snapshot,cleared:snapshot.length===0,updatedAt:new Date().toISOString()})});if(r.ok){lastStaffSnapshot=snapshot;lastStaffWriteAt=Date.now();if(snapshot.length===0)clearLockUntil=Date.now()+5000;return true;}}catch(e){}await new Promise(resolve=>setTimeout(resolve,200*i));}return false;});return staffSaveQueue;}
-async function withRealTransactions(data){
-  const rows=await getTransactions();
-  if(Array.isArray(rows)) data.transactions=rows;
-  return data;
+function inject(html){
+ const bridge=`<script>(function(){
+const OLD='${OLD_PANTRY_PREFIX}',DATA='${DATA_BASKET}',MANTLE='${MANTLE_DATA}';
+const nativeFetch=window.fetch.bind(window);
+window.fetch=async function(input,init){
+ let u=typeof input==='string'?input:(input&&input.url)||'';
+ if(u.indexOf(OLD)>=0&&u.indexOf(DATA)>=0){
+   const method=((init&&init.method)||'GET').toUpperCase();
+   if(method==='GET'){
+     const r=await nativeFetch(MANTLE,{cache:'no-store'});if(r.ok)return r;
+     return nativeFetch(input,init);
+   }
+   if(method==='POST'||method==='PUT'){
+     let body=init&&init.body;if(body&&typeof body!=='string')body=JSON.stringify(body);
+     return nativeFetch(MANTLE,{method:'POST',headers:{'Content-Type':'application/json'},body:body,cache:'no-store'});
+   }
+ }
+ return nativeFetch(input,init);
+};
+})();</script>`;
+ return html.replace('</head>',bridge+'</head>');
 }
-self.addEventListener('fetch', event => {
-  const url=event.request.url; let decodedPath=''; try{decodedPath=decodeURIComponent(new URL(url).pathname)}catch(e){}
-  if(event.request.method==='GET' && decodedPath.endsWith('/index (1).html')){
-    event.respondWith((async()=>{const original=await fetch(event.request);if(!original.ok)return original;try{const text=await original.text();let fixed=text.replace('staffs:S.staffs?.length?S.staffs:P.staffs','staffs:Array.isArray(S.staffs)?S.staffs:P.staffs');fixed=fixed.replace('staffs:S.staffs?.map((D)=>{','staffs:Array.isArray(S.staffs)?S.staffs.map((D)=>{');fixed=fixed.replace('})||L.staffs','}):L.staffs');
-      const permissionScript=`<script>(function(){var ACCOUNT_URL='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/accounts',doneFor='',aliases={dashboard:['dashboard','หน้าหลัก','แดชบอร์ด','ภาพรวม','home'],sales:['sales','ยอดขาย','ขาย','รายการขาย'],customers:['customers','ลูกค้า','สมาชิก','ข้อมูลลูกค้า'],staffs:['staffs','staff','พนักงาน','จัดการพนักงาน'],reports:['reports','รายงาน','สรุปผล'],settings:['settings','ตั้งค่า','การตั้งค่า']};function textOf(e){return((e.innerText||e.textContent||'')+' '+(e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')).trim().toLowerCase()}function findUser(){var q=['#loveb-auth-user','input[name="username"]','input[name="user"]','input[autocomplete="username"]','input[type="text"]'];for(var i=0;i<q.length;i++){var e=document.querySelector(q[i]);if(e&&e.value)return e.value.trim()}try{var p=new URLSearchParams(location.search).get('id');if(p)return p}catch(e){}return ''}function getAccounts(){return fetch(ACCOUNT_URL,{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(d){return Array.isArray(d)?d:(d&&Array.isArray(d.accounts)?d.accounts:[])})}function isAllowed(n,k){var a=aliases[k]||[];for(var i=0;i<a.length;i++)if(n.indexOf(a[i])>=0)return true;return false}function apply(a){if(!a||a.role==='admin')return;var allowed=Array.isArray(a.allowedTabs)?a.allowedTabs.map(String):[],nodes=document.querySelectorAll('button,a,[role="button"]');for(var i=0;i<nodes.length;i++){var el=nodes[i],t=textOf(el);if(!t)continue;for(var k in aliases)if(isAllowed(t,k)){if(allowed.indexOf(k)>=0)el.style.removeProperty('display');else{el.style.display='none';el.setAttribute('data-luvbabe-denied','1')}break}}document.documentElement.setAttribute('data-luvbabe-role',a.role||'partner');document.documentElement.setAttribute('data-luvbabe-allowed-tabs',allowed.join(','))}function run(){var u=findUser();if(!u||u===doneFor)return;getAccounts().then(function(list){var a=null;for(var i=0;i<list.length;i++)if(list[i]&&String(list[i].username)===String(u)){a=list[i];break}if(a){doneFor=u;apply(a)}}).catch(function(){})}var obs=new MutationObserver(function(){var role=document.documentElement.getAttribute('data-luvbabe-role');if(role==='partner'){var u=findUser();getAccounts().then(function(list){for(var i=0;i<list.length;i++)if(list[i]&&String(list[i].username)===String(u)){apply(list[i]);break}}).catch(function(){})}else run()});try{obs.observe(document.documentElement,{subtree:true,childList:true})}catch(e){}setInterval(run,1200);run()})();</script>`;
-      fixed=fixed.replace('</body>',permissionScript+'</body>');if(fixed===text)fixed=text.replace('</head>',permissionScript+'</head>');return new Response(fixed,{status:original.status,statusText:original.statusText,headers:original.headers});}catch(e){return original}})());return;}
-  if(url.includes(ACCOUNTS_BASKET) && url.startsWith(OLD_PANTRY_PREFIX)){event.respondWith((async()=>{let method=event.request.method;if(method==='PUT'||method==='POST')method='POST';const init={method,headers:new Headers(event.request.headers),cache:'no-store',mode:'cors'};if(method!=='GET'&&method!=='HEAD')init.body=await event.request.clone().arrayBuffer();try{return await fetch(MANTLE_ACCOUNTS,init)}catch(e){return new Response(JSON.stringify({error:'storage unavailable'}),{status:503,headers:{'Content-Type':'application/json'}})}})());return;}
-  if(url.includes(DATA_BASKET) && url.startsWith(OLD_PANTRY_PREFIX)){event.respondWith((async()=>{const req=event.request,method=req.method;if(method==='GET'){try{const original=await fetch(req);if(!original.ok)return original;const data=await original.clone().json();const remote=await getStaffs();if(Array.isArray(remote.staffs)){data.staffs=remote.staffs;lastStaffSnapshot=remote.staffs.map(x=>({...x}));lastStaffWriteAt=Date.now()}else if(remote.missing){const initial=Array.isArray(data.staffs)?data.staffs:[];await saveStaffs(initial);data.staffs=initial}else if(Array.isArray(lastStaffSnapshot)&&Date.now()-lastStaffWriteAt<120000)data.staffs=lastStaffSnapshot;else data.staffs=[];await withRealTransactions(data);return new Response(JSON.stringify(data),{status:original.status,statusText:original.statusText,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}catch(e){return fetch(req)}}if(method==='POST'||method==='PUT'){try{const payload=await req.clone().json();if(payload&&typeof payload==='object'){const rows=await getTransactions();if(Array.isArray(rows))payload.transactions=rows;if(Array.isArray(payload.staffs)){if(payload.staffs.length>0&&Date.now()<clearLockUntil)return fetch(req);await saveStaffs(payload.staffs)}const headers=new Headers(req.headers);headers.set('Content-Type','application/json');return fetch(req,{method,headers,cache:'no-store',body:JSON.stringify(payload)})}}catch(e){}return fetch(req)}return fetch(req)})());return;}
+const permission=`<script>(function(){var U='${MANTLE_ACCOUNTS}',A={dashboard:['dashboard','หน้าหลัก','แดชบอร์ด','ภาพรวม','home'],sales:['sales','ยอดขาย','ขาย','รายการขาย'],customers:['customers','ลูกค้า','สมาชิก','ข้อมูลลูกค้า'],staffs:['staffs','staff','พนักงาน','จัดการพนักงาน'],reports:['reports','รายงาน','สรุปผล'],settings:['settings','ตั้งค่า','การตั้งค่า']};function t(e){return((e.innerText||e.textContent||'')+' '+(e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')).toLowerCase()}function user(){var e=document.querySelector('#loveb-auth-user,input[name="username"],input[name="user"],input[autocomplete="username"]');if(e&&e.value)return e.value.trim();try{return new URLSearchParams(location.search).get('id')||''}catch(x){return ''}}function run(){var u=user();if(!u)return;fetch(U,{cache:'no-store'}).then(r=>r.json()).then(function(d){var l=Array.isArray(d)?d:(d&&Array.isArray(d.accounts)?d.accounts:[]),a=l.find(x=>x&&String(x.username)===String(u));if(!a||a.role==='admin')return;var p=Array.isArray(a.allowedTabs)?a.allowedTabs.map(String):[];document.querySelectorAll('button,a,[role="button"]').forEach(function(e){var s=t(e);Object.keys(A).forEach(function(k){if(A[k].some(v=>s.indexOf(v)>=0))e.style.display=p.indexOf(k)>=0?'':'none'})})}).catch(function(){})}new MutationObserver(run).observe(document.documentElement,{subtree:true,childList:true});setInterval(run,1500);run()})();</script>`;
+self.addEventListener('fetch',event=>{
+ const u=event.request.url;let p='';try{p=decodeURIComponent(new URL(u).pathname)}catch(e){}
+ if(event.request.method==='GET'&&p.endsWith('/index (1).html')){event.respondWith((async()=>{const r=await fetch(event.request);if(!r.ok)return r;let h=await r.text();h=inject(h);h=h.replace('</body>',permission+'</body>');return new Response(h,{status:r.status,headers:r.headers});})());return;}
+ if(u.includes(ACCOUNTS_BASKET)&&u.startsWith(OLD_PANTRY_PREFIX)){event.respondWith((async()=>{const m=event.request.method==='GET'?'GET':'POST';const init={method:m,headers:new Headers(event.request.headers),cache:'no-store'};if(m==='POST')init.body=await event.request.clone().arrayBuffer();try{return await fetch(MANTLE_ACCOUNTS,init)}catch(e){return new Response(JSON.stringify({accounts:[]}),{headers:{'Content-Type':'application/json'}})}})());return;}
+ if(u.includes(DATA_BASKET)&&u.startsWith(OLD_PANTRY_PREFIX)){event.respondWith((async()=>{if(event.request.method==='GET'){const d=await readData();const s=await staffs();if(Array.isArray(s))d.staffs=s;if(!Array.isArray(d.transactions))d.transactions=await tx();return new Response(JSON.stringify(d),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}try{const d=await event.request.clone().json();if(d&&typeof d==='object'){if(!Array.isArray(d.transactions))d.transactions=await tx();if(Array.isArray(d.staffs))await saveStaffs(d.staffs);await writeData(d);return new Response(JSON.stringify({ok:true}),{status:200,headers:{'Content-Type':'application/json'}})}}catch(e){}return new Response(JSON.stringify({ok:true}),{status:200,headers:{'Content-Type':'application/json'}})})());return;}
 });
