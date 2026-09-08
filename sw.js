@@ -3,38 +3,52 @@ const MANTLE_ACCOUNTS = 'https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e92
 const MANTLE_STAFFS = 'https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/staffs';
 const ACCOUNTS_BASKET = '/basket/loveb_accounts_v1';
 const DATA_BASKET = '/basket/loveb_pink_complete_final';
-const APP_FILE = '/LuvBabe/index%20(1).html';
 
 self.addEventListener('install', event => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 
+let lastStaffSnapshot = null;
+let lastStaffWriteAt = 0;
+let clearLockUntil = 0;
+
 async function mantleGetStaffState() {
   try {
     const r = await fetch(MANTLE_STAFFS, {cache:'no-store', mode:'cors'});
-    if (r.status === 404) return {found:false, staffs:null};
-    if (!r.ok) return {found:false, staffs:null};
+    if (r.status === 404) return {status:'missing', found:false, staffs:null};
+    if (!r.ok) return {status:'error', found:false, staffs:null};
     const d = await r.json();
-    if (d && Array.isArray(d.staffs)) return {found:true, staffs:d.staffs};
-    if (Array.isArray(d)) return {found:true, staffs:d};
-    if (d && d.cleared === true) return {found:true, staffs:[]};
-    return {found:true, staffs:[]};
-  } catch (e) { return {found:false, staffs:null}; }
+    if (d && Array.isArray(d.staffs)) return {status:'ok', found:true, staffs:d.staffs};
+    if (Array.isArray(d)) return {status:'ok', found:true, staffs:d};
+    if (d && d.cleared === true) return {status:'ok', found:true, staffs:[]};
+    return {status:'ok', found:true, staffs:[]};
+  } catch (e) {
+    return {status:'error', found:false, staffs:null};
+  }
 }
 
 let staffSaveQueue = Promise.resolve();
 function queueStaffSave(staffs) {
   const snapshot = Array.isArray(staffs) ? staffs.map(x => ({...x})) : [];
   staffSaveQueue = staffSaveQueue.then(async () => {
-    try {
-      const r = await fetch(MANTLE_STAFFS, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        cache:'no-store',
-        mode:'cors',
-        body:JSON.stringify({staffs:snapshot,cleared:snapshot.length===0,updatedAt:new Date().toISOString()})
-      });
-      return r.ok;
-    } catch (e) { return false; }
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const r = await fetch(MANTLE_STAFFS, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          cache:'no-store',
+          mode:'cors',
+          body:JSON.stringify({staffs:snapshot,cleared:snapshot.length===0,updatedAt:new Date().toISOString()})
+        });
+        if (r.ok) {
+          lastStaffSnapshot = snapshot;
+          lastStaffWriteAt = Date.now();
+          if (snapshot.length === 0) clearLockUntil = Date.now() + 3000;
+          return true;
+        }
+      } catch (e) {}
+      await new Promise(resolve => setTimeout(resolve, 150 * attempt));
+    }
+    return false;
   });
   return staffSaveQueue;
 }
@@ -45,8 +59,8 @@ self.addEventListener('fetch', event => {
   try { decodedPath = decodeURIComponent(new URL(url).pathname); } catch (e) {}
 
   // The original app uses a space in "index (1).html". URL.pathname is
-  // percent-encoded, so decode it before matching. This patch changes only
-  // the staff-selection condition and leaves transaction data untouched.
+  // percent-encoded, so decode it before matching. This only fixes staff
+  // selection and does not modify transaction fields.
   if (event.request.method === 'GET' && decodedPath.endsWith('/index (1).html')) {
     event.respondWith((async () => {
       const original = await fetch(event.request);
@@ -95,11 +109,28 @@ self.addEventListener('fetch', event => {
           if (!original.ok) return original;
           const data = await original.clone().json();
           const state = await mantleGetStaffState();
-          if (state.found) {
+
+          if (state.status === 'ok') {
             data.staffs = state.staffs;
-          } else if (Array.isArray(data.staffs)) {
-            await queueStaffSave(data.staffs);
+          } else if (state.status === 'missing') {
+            // First migration only: seed the separate staff store once.
+            if (Array.isArray(data.staffs)) {
+              await queueStaffSave(data.staffs);
+            } else {
+              await queueStaffSave([]);
+              data.staffs = [];
+            }
+          } else {
+            // If the separate staff store is temporarily unavailable, never
+            // resurrect old staff from Pantry. Use the last confirmed snapshot
+            // when available; otherwise show an empty staff list.
+            if (Array.isArray(lastStaffSnapshot) && Date.now() - lastStaffWriteAt < 60000) {
+              data.staffs = lastStaffSnapshot;
+            } else {
+              data.staffs = [];
+            }
           }
+
           return new Response(JSON.stringify(data), {
             status:original.status,statusText:original.statusText,
             headers:{'Content-Type':'application/json','Cache-Control':'no-store'}
@@ -111,6 +142,16 @@ self.addEventListener('fetch', event => {
         let payload = null;
         try { payload = await req.clone().json(); } catch (e) {}
         if (payload && Array.isArray(payload.staffs)) {
+          // Ignore a very-late stale non-empty autosave that arrives immediately
+          // after the user has explicitly cleared everyone.
+          if (payload.staffs.length > 0 && Date.now() < clearLockUntil) {
+            const clean = {...payload};
+            delete clean.staffs;
+            const headers = new Headers(req.headers);
+            headers.delete('content-length');
+            return fetch(new Request(req.url,{method:'POST',headers,body:JSON.stringify(clean),mode:'cors',credentials:req.credentials,cache:'no-store'}));
+          }
+
           await queueStaffSave(payload.staffs);
           const clean = {...payload};
           delete clean.staffs;
