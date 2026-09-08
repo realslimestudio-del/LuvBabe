@@ -7,7 +7,7 @@
 (function(){
   var frame=document.getElementById('app');
   var CLOUD='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/accounts';
-  var SW='sw.js?v=20260908-24';
+  var SW='sw.js?v=20260908-28';
   function loadAccounts(){return fetch(CLOUD,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('โหลดบัญชีไม่สำเร็จ');return r.json()}).then(function(d){return Array.isArray(d)?d:(d&&Array.isArray(d.accounts)?d.accounts:[])});}
   function saveAccounts(list){return fetch(CLOUD,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({accounts:list})}).then(function(r){if(!r.ok)throw new Error('บันทึกบัญชีไม่สำเร็จ');return true});}
   function randomString(n){var s='',c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';for(var i=0;i<n;i++)s+=c[Math.floor(Math.random()*c.length)];return s;}
@@ -22,9 +22,21 @@
     var friendId=new URLSearchParams(window.location.search).get('id');if(friendId){var input=doc.getElementById('loveb-auth-user');if(input)input.value=friendId;}
   }
   function install(doc){installFriendButton(doc);}
-  function boot(){frame.src='index%20(1).html'+(window.location.search||'')+'&_app=20260908-24';frame.addEventListener('load',function(){try{var doc=frame.contentDocument||frame.contentWindow.document;install(doc);if(doc.documentElement){var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true});}}catch(e){}});}
+  function boot(){frame.src='index%20(1).html'+(window.location.search||'')+'&_app=20260908-28';frame.addEventListener('load',function(){try{var doc=frame.contentDocument||frame.contentWindow.document;install(doc);if(doc.documentElement){var obs=new MutationObserver(function(){install(doc)});obs.observe(doc.documentElement,{subtree:true,childList:true});}}catch(e){}});}
   function start(){ensureRecovery().catch(function(){}).then(boot);}
-  if('serviceWorker' in navigator){navigator.serviceWorker.register(SW,{scope:'./'}).then(function(reg){return reg.update().then(function(){return navigator.serviceWorker.ready;});}).then(start).catch(start);
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register(SW,{scope:'./'}).then(function(reg){
+      return reg.update().then(function(){
+        if(reg.waiting) reg.waiting.postMessage({type:'SKIP_WAITING'});
+        return new Promise(function(resolve){
+          if(reg.active && navigator.serviceWorker.controller===reg.active) return resolve();
+          var done=false;
+          function finish(){if(done)return;done=true;navigator.serviceWorker.removeEventListener('controllerchange',finish);resolve();}
+          navigator.serviceWorker.addEventListener('controllerchange',finish);
+          setTimeout(finish,3000);
+        });
+      });
+    }).then(start).catch(start);
   }else start();
 })();
 </script>
