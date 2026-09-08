@@ -41,12 +41,13 @@ function queueStaffSave(staffs) {
 
 self.addEventListener('fetch', event => {
   const url = event.request.url;
+  let decodedPath = '';
+  try { decodedPath = decodeURIComponent(new URL(url).pathname); } catch (e) {}
 
-  // Patch one existing app condition at response time. The original app used
-  // "S.staffs?.length ? S.staffs : P.staffs", which resurrected the old local
-  // staff list whenever the authoritative saved list was intentionally empty.
-  // This changes only that staff-selection condition; transaction code/data is untouched.
-  if (event.request.method === 'GET' && new URL(url).pathname.endsWith('/index (1).html')) {
+  // The original app uses a space in "index (1).html". URL.pathname is
+  // percent-encoded, so decode it before matching. This patch changes only
+  // the staff-selection condition and leaves transaction data untouched.
+  if (event.request.method === 'GET' && decodedPath.endsWith('/index (1).html')) {
     event.respondWith((async () => {
       const original = await fetch(event.request);
       if (!original.ok) return original;
