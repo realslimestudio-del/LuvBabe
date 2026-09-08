@@ -3,6 +3,7 @@ const MANTLE_ACCOUNTS = 'https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e92
 const MANTLE_STAFFS = 'https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/staffs';
 const ACCOUNTS_BASKET = '/basket/loveb_accounts_v1';
 const DATA_BASKET = '/basket/loveb_pink_complete_final';
+const APP_FILE = '/LuvBabe/index%20(1).html';
 
 self.addEventListener('install', event => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
@@ -13,7 +14,6 @@ async function mantleGetStaffState() {
     if (r.status === 404) return {found:false, staffs:null};
     if (!r.ok) return {found:false, staffs:null};
     const d = await r.json();
-    // A valid Mantle record is authoritative, including an intentional empty list.
     if (d && Array.isArray(d.staffs)) return {found:true, staffs:d.staffs};
     if (Array.isArray(d)) return {found:true, staffs:d};
     if (d && d.cleared === true) return {found:true, staffs:[]};
@@ -41,6 +41,31 @@ function queueStaffSave(staffs) {
 
 self.addEventListener('fetch', event => {
   const url = event.request.url;
+
+  // Patch one existing app condition at response time. The original app used
+  // "S.staffs?.length ? S.staffs : P.staffs", which resurrected the old local
+  // staff list whenever the authoritative saved list was intentionally empty.
+  // This changes only that staff-selection condition; transaction code/data is untouched.
+  if (event.request.method === 'GET' && new URL(url).pathname.endsWith('/index (1).html')) {
+    event.respondWith((async () => {
+      const original = await fetch(event.request);
+      if (!original.ok) return original;
+      try {
+        const text = await original.text();
+        const fixed = text.replace(
+          'staffs:S.staffs?.length?S.staffs:P.staffs',
+          'staffs:Array.isArray(S.staffs)?S.staffs:P.staffs'
+        );
+        return new Response(fixed, {
+          status:original.status,
+          statusText:original.statusText,
+          headers:original.headers
+        });
+      } catch (e) { return original; }
+    })());
+    return;
+  }
+
   if (!url.startsWith(OLD_PANTRY_PREFIX)) return;
 
   const isAccountsBasket = url.includes(ACCOUNTS_BASKET);
