@@ -4,56 +4,42 @@ const MANTLE_STAFFS='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d
 const MANTLE_DATA='https://mantledb.sh/v2/luv-babe-fdf1a72c430003fba7f4e922e0d00283/appdata';
 const DATA_BASKET='/basket/loveb_pink_complete_final';
 const ACCOUNTS_BASKET='/basket/loveb_accounts_v1';
-const TX_URL=new URL('transactions.json?v=20260908-27',self.registration.scope).href;
+const TX_URL=new URL('transactions.json?v=20260909-01',self.registration.scope).href;
 self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));
 self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
-let txCache=null;
-async function tx(){try{const r=await fetch(TX_URL,{cache:'no-store'});const d=await r.json();if(Array.isArray(d))txCache=d;}catch(e){}return txCache||[];}
+let seedCache=null;
+async function seedTransactions(){try{const r=await fetch(TX_URL,{cache:'no-store'});const d=await r.json();if(Array.isArray(d))seedCache=d;}catch(e){}return seedCache||[];}
 async function staffs(){try{const r=await fetch(MANTLE_STAFFS,{cache:'no-store',mode:'cors'});if(!r.ok)return null;const d=await r.json();return Array.isArray(d)?d:(d&&Array.isArray(d.staffs)?d.staffs:[]);}catch(e){return null;}}
 async function saveStaffs(s){try{await fetch(MANTLE_STAFFS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({staffs:Array.isArray(s)?s:[],cleared:!Array.isArray(s)||s.length===0,updatedAt:new Date().toISOString()})});}catch(e){}}
 async function readData(){
- const rows=await tx();
- try{const r=await fetch(MANTLE_DATA,{cache:'no-store',mode:'cors'});if(r.ok){const d=await r.json();if(d&&typeof d==='object'){d.transactions=rows;const s=await staffs();if(Array.isArray(s))d.staffs=s;return d;}}}catch(e){}
- try{const r=await fetch(OLD_PANTRY_PREFIX+DATA_BASKET,{cache:'no-store'});if(r.ok){const d=await r.json();if(d&&typeof d==='object'){d.transactions=rows;const s=await staffs();if(Array.isArray(s))d.staffs=s;try{await fetch(MANTLE_DATA,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});}catch(e){}return d;}}}catch(e){}
- return {transactions:rows,staffs:[]};
+ try{const r=await fetch(MANTLE_DATA,{cache:'no-store',mode:'cors'});if(r.ok){const d=await r.json();if(d&&typeof d==='object'){
+   if(!Array.isArray(d.transactions)){const seed=await seedTransactions();if(seed.length){d.transactions=seed;d._seededTransactionsAt=new Date().toISOString();try{await fetch(MANTLE_DATA,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d),cache:'no-store',mode:'cors'});}catch(e){}}else d.transactions=[];}
+   const s=await staffs();if(Array.isArray(s))d.staffs=s;return d;
+ }}}catch(e){}
+ try{const r=await fetch(OLD_PANTRY_PREFIX+DATA_BASKET,{cache:'no-store'});if(r.ok){const d=await r.json();if(d&&typeof d==='object'){if(!Array.isArray(d.transactions))d.transactions=await seedTransactions();const s=await staffs();if(Array.isArray(s))d.staffs=s;try{await fetch(MANTLE_DATA,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d),cache:'no-store',mode:'cors'});}catch(e){}return d;}}}catch(e){}
+ return {transactions:await seedTransactions(),staffs:[]};
 }
 async function writeData(d){
- const rows=await tx();
- try{d=d&&typeof d==='object'?d:{};d.transactions=rows;const s=Array.isArray(d.staffs)?d.staffs:await staffs();if(Array.isArray(s))d.staffs=s;const r=await fetch(MANTLE_DATA,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',mode:'cors',body:JSON.stringify(d)});if(r.ok)return true;}catch(e){}
+ try{d=d&&typeof d==='object'?d:{};if(!Array.isArray(d.transactions))d.transactions=[];const s=Array.isArray(d.staffs)?d.staffs:await staffs();if(Array.isArray(s))d.staffs=s;d.updatedAt=new Date().toISOString();const r=await fetch(MANTLE_DATA,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',mode:'cors',body:JSON.stringify(d)});if(r.ok)return true;}catch(e){}
  try{const r=await fetch(OLD_PANTRY_PREFIX+DATA_BASKET,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(d)});return r.ok;}catch(e){return false;}
 }
 function inject(html){
  const bridge=`<script>(function(){
-const OLD='${OLD_PANTRY_PREFIX}',DATA='${DATA_BASKET}',MANTLE='${MANTLE_DATA}',TX='/LuvBabe/transactions.json?v=20260908-27';
+const OLD='${OLD_PANTRY_PREFIX}',DATA='${DATA_BASKET}',MANTLE='${MANTLE_DATA}';
 const nativeFetch=window.fetch.bind(window);
-async function realRows(){try{const r=await nativeFetch(TX,{cache:'no-store'});const d=await r.json();return Array.isArray(d)?d:[]}catch(e){return[]}}
 function isData(u){return u.indexOf(OLD)>=0&&u.indexOf(DATA)>=0}
 window.fetch=async function(input,init){
  let u=typeof input==='string'?input:(input&&input.url)||'';
  if(isData(u)){
   const method=((init&&init.method)||'GET').toUpperCase();
-  if(method==='GET'){const r=await nativeFetch(MANTLE,{cache:'no-store'});if(r.ok){const d=await r.json(),rows=await realRows();if(d&&typeof d==='object'){d.transactions=rows;return new Response(JSON.stringify(d),{status:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}}return nativeFetch(input,init)}
-  if(method==='POST'||method==='PUT'){let body=init&&init.body;if(body&&typeof body!=='string')body=JSON.stringify(body);try{const d=body?JSON.parse(body):{};d.transactions=await realRows();return nativeFetch(MANTLE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d),cache:'no-store'})}catch(e){return nativeFetch(MANTLE,{method:'POST',headers:{'Content-Type':'application/json'},body:body,cache:'no-store'})}}
+  if(method==='GET'){try{const r=await nativeFetch(MANTLE,{cache:'no-store'});if(r.ok)return new Response(await r.text(),{status:r.status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}catch(e){}return nativeFetch(input,init)}
+  if(method==='POST'||method==='PUT'||method==='PATCH'){
+   let body=init&&init.body;if(body&&typeof body!=='string')body=JSON.stringify(body);
+   try{const r=await nativeFetch(MANTLE,{method:'POST',headers:{'Content-Type':'application/json'},body:body||'{}',cache:'no-store'});if(r.ok)return r;return r}catch(e){return nativeFetch(input,init)}
+  }
  }
- if(u===MANTLE){const method=((init&&init.method)||'GET').toUpperCase();if(method==='GET'){const r=await nativeFetch(input,init);if(r.ok){try{const d=await r.clone().json(),rows=await realRows();if(d&&typeof d==='object'){d.transactions=rows;return new Response(JSON.stringify(d),{status:r.status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}}catch(e){}}return r}}
  return nativeFetch(input,init);
 };
-function txt(e){return((e.innerText||e.textContent||'')+'').replace(/\\s+/g,' ').trim().toLowerCase()}
-function val(r,a,b){return r[a]!==undefined&&r[a]!==null?r[a]:(r[b]!==undefined&&r[b]!==null?r[b]:'')}
-async function render(){
- const rows=await realRows();if(!rows.length)return;
- document.querySelectorAll('table').forEach(function(table){
-  const heads=Array.from(table.querySelectorAll('thead th')).map(txt),flat=Array.from(table.querySelectorAll('th')).map(txt);
-  const wanted=['วันที่','เวลา','ประเภท','จำนวน robux'];
-  if(!wanted.every(x=>heads.indexOf(x)>=0||flat.indexOf(x)>=0))return;
-  const body=table.tBodies[0];if(!body)return;
-  const expected=rows.map(r=>[val(r,'date','วันที่'),val(r,'time','เวลา'),val(r,'type','ประเภท'),val(r,'robux','จำนวน Robux'),val(r,'rate','เรท'),val(r,'baht','ยอดบาท'),val(r,'partner','คู่ค้า'),val(r,'shop','ตัวละคร/ไอดีร้าน'),val(r,'note','โน้ต')]);
-  const current=Array.from(body.rows).map(tr=>Array.from(tr.cells).map(td=>td.textContent));
-  if(current.length===expected.length&&current[0]&&expected[0]&&current[0].join('\u001f')===expected[0].join('\u001f')&&current[current.length-1].join('\u001f')===expected[expected.length-1].join('\u001f'))return;
-  const frag=document.createDocumentFragment();expected.forEach(row=>{const tr=document.createElement('tr');row.forEach(v=>{const td=document.createElement('td');td.textContent=String(v);tr.appendChild(td)});frag.appendChild(tr)});body.replaceChildren(frag);
- });
-}
-new MutationObserver(()=>{setTimeout(render,0)}).observe(document.documentElement,{subtree:true,childList:true});setTimeout(render,300);setTimeout(render,1000);setInterval(render,2500);
 })();</script>`;
  return html.replace('</head>',bridge+'</head>');
 }
@@ -62,5 +48,5 @@ self.addEventListener('fetch',event=>{
  const u=event.request.url;let p='';try{p=decodeURIComponent(new URL(u).pathname)}catch(e){}
  if(event.request.method==='GET'&&p.endsWith('/index (1).html')){event.respondWith((async()=>{const r=await fetch(event.request);if(!r.ok)return r;let h=await r.text();h=inject(h);h=h.replace('</body>',permission+'</body>');return new Response(h,{status:r.status,headers:r.headers});})());return;}
  if(u.includes(ACCOUNTS_BASKET)&&u.startsWith(OLD_PANTRY_PREFIX)){event.respondWith((async()=>{const m=event.request.method==='GET'?'GET':'POST';const init={method:m,headers:new Headers(event.request.headers),cache:'no-store'};if(m==='POST')init.body=await event.request.clone().arrayBuffer();try{return await fetch(MANTLE_ACCOUNTS,init)}catch(e){return new Response(JSON.stringify({accounts:[]}),{headers:{'Content-Type':'application/json'}})}})());return;}
- if(u.includes(DATA_BASKET)&&u.startsWith(OLD_PANTRY_PREFIX)){event.respondWith((async()=>{if(event.request.method==='GET'){const d=await readData();return new Response(JSON.stringify(d),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}try{const d=await event.request.clone().json();if(d&&typeof d==='object'){if(Array.isArray(d.staffs))await saveStaffs(d.staffs);await writeData(d);return new Response(JSON.stringify({ok:true}),{status:200,headers:{'Content-Type':'application/json'}})}}catch(e){}return new Response(JSON.stringify({ok:true}),{status:200,headers:{'Content-Type':'application/json'}})})());return;}
+ if(u.includes(DATA_BASKET)&&u.startsWith(OLD_PANTRY_PREFIX)){event.respondWith((async()=>{if(event.request.method==='GET'){const d=await readData();return new Response(JSON.stringify(d),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}try{const d=await event.request.clone().json();if(d&&typeof d==='object'){if(Array.isArray(d.staffs))await saveStaffs(d.staffs);const ok=await writeData(d);return new Response(JSON.stringify({ok:ok}),{status:ok?200:500,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}}catch(e){return new Response(JSON.stringify({ok:false,error:String(e)}),{status:500,headers:{'Content-Type':'application/json'}})}return new Response(JSON.stringify({ok:false}),{status:400,headers:{'Content-Type':'application/json'}})})());return;}
 });
