@@ -1,7 +1,7 @@
 name: Build Lovebabe Windows Installer
 on:
   push:
-    branches: [lovebabe-windows-installer]
+    branches: [main, lovebabe-windows-installer]
   pull_request:
     branches: [main]
   workflow_dispatch:
