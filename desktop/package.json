@@ -1,0 +1,26 @@
+{
+  "name": "lovebabe-desktop",
+  "version": "1.0.0",
+  "description": "Lovebabe Windows desktop application",
+  "main": "main.js",
+  "private": true,
+  "scripts": { "dist": "electron-builder --win nsis" },
+  "devDependencies": { "electron": "^42.7.1", "electron-builder": "^26.0.12" },
+  "build": {
+    "appId": "com.lovebabe.desktop",
+    "productName": "Lovebabe",
+    "artifactName": "Lovebabe-Setup.exe",
+    "directories": { "output": "dist" },
+    "files": ["app.html", "main.js", "preload.js", "icon.ico"],
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "icon.ico" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Lovebabe",
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
