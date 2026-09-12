@@ -1,0 +1,1 @@
+Lovebabe Windows desktop installer build. The GitHub Actions workflow builds Lovebabe-Setup.exe for Windows x64.
